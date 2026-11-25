@@ -1,0 +1,1014 @@
+<!doctype html>
+<!-- PROTOTYPE - NOT FOR PRODUCTION -->
+<!-- Question: 파트너 크루와 함께 피크타임을 넘기는 영업 루프가 3일 동안 재미있는가? -->
+<!-- Date: 2026-11-25 -->
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>골든번 이태원역점</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #2a1a0e; overflow: hidden; }
+  body { font-variant-numeric: tabular-nums; }
+  canvas { display: block; margin: 0 auto; touch-action: none; }
+  #nm { position: fixed; display: none; box-sizing: border-box; text-align: center; border: 3px solid #3a2414;
+        border-radius: 12px; background: #fffdf7; color: #3a2414; outline: none; padding: 0; }
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<input id="nm" maxlength="8" value="신입" aria-label="이름">
+<script src="config.js"></script>
+<script src="story.js"></script>
+<script>
+'use strict';
+// ---- Built to be checked ----------------------------------------------------------------
+const params = new URLSearchParams(location.search);
+const tune = new Proxy({}, { get: (_, k) => CONFIG[k].value }); // live: tune.speed is CONFIG.speed.value
+const STEP = 1 / 60;            // simulation step in seconds
+const W = 720, H = 1280;        // logical size: 세로 9:16
+const PIXEL = false;
+const FONT = '"Pretendard","Noto Sans KR","Apple SD Gothic Neo","Malgun Gothic","Noto Sans CJK KR",sans-serif';
+const TITLE = '골든번 이태원역점';
+const CONTROLS = ['탭/클릭: 재료 쌓기, 조리, 손님에게 제공', 'PC: Q W E R 재료 · A S D F 구역 · 1~4 손님', 'P: 일시정지 · M: 음소거'];
+const clock = window.GAME_CLOCK || { now: () => performance.now() / 1000 }; // a check may inject one
+const CHEAP = params.get('render') === 'cheap';
+let seed;
+function rng() { // mulberry32; every gameplay random call reads this, never Math.random
+  seed = (seed + 0x6D2B79F5) | 0;
+  let t = Math.imul(seed ^ (seed >>> 15), seed | 1);
+  t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+}
+const events = []; // window.game.events
+
+// ---- Palette (the brief's Look) -----------------------------------------------------------
+const C = { ink: '#3a2414', yellow: '#ffc21a', yellowD: '#e89a00', red: '#e0412b', cream: '#fff3d6', tile: '#f3dfae',
+  brown: '#8a5a2b', white: '#fffdf7', green: '#3f9d4a', gray: '#9a8f80', bun: '#e9a23b', patty: '#6b3a1e',
+  cheese: '#ffd23f', steel: '#c9d0d6', skin: '#f2b98f' };
+
+// ---- Screen ---------------------------------------------------------------------------
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const nameInput = document.getElementById('nm');
+function fit() {
+  const k = Math.min(innerWidth / W, innerHeight / H);
+  const s = PIXEL ? Math.max(1, Math.floor(k)) : k;
+  const r = PIXEL ? 1 : s * (devicePixelRatio || 1);
+  canvas.width = Math.round(W * r); canvas.height = Math.round(H * r);
+  canvas.style.width = Math.round(W * s) + 'px'; canvas.style.height = Math.round(H * s) + 'px';
+  const top = Math.max(0, Math.floor((innerHeight - H * s) / 2));
+  canvas.style.marginTop = top + 'px';
+  ctx.setTransform(r, 0, 0, r, 0, 0); ctx.imageSmoothingEnabled = !PIXEL;
+  const left = (innerWidth - W * s) / 2;
+  nameInput.style.left = (left + 210 * s) + 'px'; nameInput.style.top = (top + 770 * s) + 'px';
+  nameInput.style.width = (300 * s) + 'px'; nameInput.style.height = (64 * s) + 'px';
+  nameInput.style.fontSize = (28 * s) + 'px';
+}
+addEventListener('resize', fit); fit();
+
+// ---- Drawing helpers ----------------------------------------------------------------------
+function clear(c) { ctx.fillStyle = c; ctx.fillRect(0, 0, W, H); }
+function text(s, x, y, size, c, align = 'center', bold = false) {
+  ctx.fillStyle = c; ctx.font = `${bold ? '700 ' : ''}${size}px ${FONT}`; ctx.textAlign = align;
+  ctx.textBaseline = 'middle'; ctx.fillText(s, x, y);
+}
+function wrap(s, maxW, size, bold = false) { // 한글은 글자 단위로 줄바꿈
+  ctx.font = `${bold ? '700 ' : ''}${size}px ${FONT}`;
+  const out = []; let line = '';
+  for (const ch of s) {
+    if (ctx.measureText(line + ch).width > maxW && line) { out.push(line); line = ch === ' ' ? '' : ch; }
+    else line += ch;
+  }
+  if (line) out.push(line);
+  return out;
+}
+function para(s, x, y, maxW, size, c, lh, align = 'left', bold = false) {
+  const lines = wrap(s, maxW, size, bold);
+  lines.forEach((l, i) => text(l, x, y + i * lh, size, c, align, bold));
+  return lines.length;
+}
+function rr(x, y, w, h, r, fill, stroke = C.ink, lw = 4) {
+  ctx.beginPath(); ctx.roundRect(x, y, w, h, r);
+  if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+  if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = lw; ctx.stroke(); }
+}
+function ell(x, y, rx, ry, fill, stroke = C.ink, lw = 4) {
+  ctx.beginPath(); ctx.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2);
+  if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+  if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = lw; ctx.stroke(); }
+}
+function poly(pts, fill, stroke = C.ink, lw = 4, close = true) {
+  ctx.beginPath(); ctx.moveTo(pts[0], pts[1]);
+  for (let i = 2; i < pts.length; i += 2) ctx.lineTo(pts[i], pts[i + 1]);
+  if (close) ctx.closePath();
+  ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+  if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+  if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = lw; ctx.stroke(); }
+}
+function line(x1, y1, x2, y2, c = C.ink, lw = 4) { poly([x1, y1, x2, y2], null, c, lw, false); }
+function won(n) { return '₩' + Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ','); }
+function at(x, y, s, fn) { ctx.save(); ctx.translate(x, y); ctx.scale(s, s); fn(); ctx.restore(); }
+
+// ---- Figures: 로고, 음식, 손님, 크루 (전부 코드로 그림) -------------------------------------
+function drawBunny(x, y, s) { // 번 모양 토끼 '버니'
+  at(x, y, s, () => {
+    ell(-14, -34, 9, 24, C.cream); ell(14, -34, 9, 24, C.cream);
+    ell(-14, -32, 4, 14, '#f7a8a0', null); ell(14, -32, 4, 14, '#f7a8a0', null);
+    ctx.beginPath(); ctx.moveTo(-40, 14); ctx.quadraticCurveTo(-40, -26, 0, -26); ctx.quadraticCurveTo(40, -26, 40, 14);
+    ctx.closePath(); ctx.fillStyle = C.bun; ctx.fill(); ctx.strokeStyle = C.ink; ctx.lineWidth = 4; ctx.stroke();
+    rr(-40, 14, 80, 14, 6, '#f6c873');
+    ell(-12, -2, 3.5, 4.5, C.ink, null); ell(12, -2, 3.5, 4.5, C.ink, null);
+    ctx.beginPath(); ctx.arc(0, 4, 5, 0.1, Math.PI - 0.1); ctx.strokeStyle = C.ink; ctx.lineWidth = 3; ctx.stroke();
+    ell(-22, -14, 3, 1.5, C.cream, null); ell(4, -18, 3, 1.5, C.cream, null); ell(24, -10, 3, 1.5, C.cream, null);
+  });
+}
+function bunTop(y, w) {
+  ctx.beginPath(); ctx.moveTo(-w, y); ctx.quadraticCurveTo(-w, y - w * 0.8, 0, y - w * 0.8); ctx.quadraticCurveTo(w, y - w * 0.8, w, y);
+  ctx.closePath(); ctx.fillStyle = C.bun; ctx.fill(); ctx.strokeStyle = C.ink; ctx.lineWidth = 4; ctx.stroke();
+  ell(-w * 0.4, y - w * 0.45, 4, 2, C.cream, null); ell(w * 0.1, y - w * 0.6, 4, 2, C.cream, null); ell(w * 0.5, y - w * 0.35, 4, 2, C.cream, null);
+}
+function drawItem(id, x, y, s) { // 음식과 재료 아이콘, 기준 크기 약 80px
+  at(x, y, s, () => {
+    if (id === 'burger' || id === 'double') {
+      const dbl = id === 'double'; let yy = 30;
+      rr(-34, yy - 12, 68, 14, 6, '#f6c873'); yy -= 12;
+      rr(-36, yy - 12, 72, 12, 5, C.patty); yy -= 12;
+      if (dbl) { poly([-38, yy, 38, yy, 30, yy - 8, -30, yy - 8], C.cheese); yy -= 8; rr(-36, yy - 12, 72, 12, 5, C.patty); yy -= 12; }
+      poly([-38, yy, -24, yy - 7, -10, yy, 4, yy - 7, 18, yy, 30, yy - 7, 38, yy], '#7ac74f');
+      bunTop(yy - 4, 36);
+    } else if (id === 'fries') {
+      for (let i = -3; i <= 3; i++) rr(i * 8 - 4, -34 + Math.abs(i) * 5, 8, 44, 2, C.yellow, C.ink, 3);
+      poly([-30, -4, 30, -4, 22, 34, -22, 34], C.red);
+      ell(0, 14, 9, 7, C.yellow, C.ink, 3);
+    } else if (id === 'drink') {
+      line(8, -40, 14, -18, C.red, 5);
+      poly([-22, -18, 22, -18, 16, 34, -16, 34], C.white);
+      poly([-20, 0, 20, 0, 18, 14, -18, 14], C.red, null);
+      rr(-26, -24, 52, 10, 4, C.white);
+    } else if (id === 'cone') {
+      poly([-16, 0, 16, 0, 0, 38], '#e2a45a');
+      line(-8, 6, 6, 22, C.brown, 2); line(8, 6, -6, 22, C.brown, 2);
+      ell(0, -6, 20, 10, C.white); ell(0, -18, 15, 9, C.white); ell(0, -29, 9, 7, C.white);
+      poly([0, -42, 5, -34, -3, -33], C.white, C.ink, 3);
+    } else if (id === 'bun') {
+      rr(-34, 10, 68, 14, 6, '#f6c873'); bunTop(4, 34);
+    } else if (id === 'patty') {
+      ell(0, 6, 36, 14, C.patty); line(-18, 2, 14, 2, '#8d5632', 3); line(-10, 10, 20, 10, '#8d5632', 3);
+    } else if (id === 'cheese') {
+      poly([-30, 10, 0, -14, 30, 10, 0, 28], C.cheese); ell(-6, 6, 4, 3, C.yellowD, null); ell(10, 12, 3, 2, C.yellowD, null);
+    } else if (id === 'trash') {
+      poly([-22, -14, 22, -14, 16, 32, -16, 32], C.gray); rr(-28, -24, 56, 10, 4, C.gray); rr(-8, -32, 16, 8, 3, C.gray);
+      line(-8, -4, -6, 24, C.ink, 3); line(8, -4, 6, 24, C.ink, 3);
+    }
+  });
+}
+const CUSTOMER_NAMES = ['학생', '회사원', '할머니', '클러버'];
+function face(mood, eyeY, mouthY, dark = C.ink) { // 손님 얼굴: happy, ok, angry
+  if (mood === 'angry') { line(-16, eyeY - 12, -5, eyeY - 7, dark, 4); line(16, eyeY - 12, 5, eyeY - 7, dark, 4); }
+  ell(-10, eyeY, 3.5, 4.5, dark, null); ell(10, eyeY, 3.5, 4.5, dark, null);
+  ctx.beginPath();
+  if (mood === 'happy') ctx.arc(0, mouthY - 4, 9, 0.15, Math.PI - 0.15);
+  else if (mood === 'angry') ctx.arc(0, mouthY + 8, 9, Math.PI + 0.3, -0.3);
+  else { ctx.moveTo(-7, mouthY); ctx.lineTo(7, mouthY); }
+  ctx.strokeStyle = dark; ctx.lineWidth = 4; ctx.lineCap = 'round'; ctx.stroke();
+}
+function drawCustomer(kind, x, y, mood, s = 1) { // 발밑이 (x, y), 카운터가 아래를 가린다
+  at(x, y, s, () => {
+    if (kind === 0) { // 학생: 모자와 가방끈
+      rr(-52, -96, 104, 110, 30, '#4f8fd6');
+      line(-30, -92, -22, 0, C.ink, 7); line(30, -92, 22, 0, C.ink, 7);
+      ell(0, -128, 38, 38, C.skin);
+      ctx.beginPath(); ctx.arc(0, -134, 39, Math.PI, 0); ctx.closePath(); ctx.fillStyle = C.red; ctx.fill(); ctx.strokeStyle = C.ink; ctx.lineWidth = 4; ctx.stroke();
+      rr(-4, -140, 62, 12, 6, C.red);
+      face(mood, -122, -104);
+    } else if (kind === 1) { // 회사원: 각진 어깨와 넥타이
+      poly([-62, 14, -58, -84, -22, -98, 22, -98, 58, -84, 62, 14], '#6f7785');
+      poly([-16, -98, 0, -74, 16, -98], C.white); poly([-6, -86, 6, -86, 9, -40, 0, -28, -9, -40], C.red);
+      rr(-33, -168, 66, 76, 22, C.skin);
+      poly([-35, -146, -30, -176, 34, -176, 36, -150, 10, -160, -20, -158], '#2b2b2b');
+      face(mood, -130, -108);
+    } else if (kind === 2) { // 할머니: 올림머리와 안경
+      ell(0, -40, 64, 58, '#9a6bb5');
+      ell(0, -112, 40, 36, C.skin);
+      ell(0, -150, 22, 18, '#d9d9d9');
+      ctx.beginPath(); ctx.arc(0, -118, 41, Math.PI * 1.08, Math.PI * 1.92); ctx.strokeStyle = '#d9d9d9'; ctx.lineWidth = 14; ctx.stroke();
+      ctx.beginPath(); ctx.arc(0, -118, 47, Math.PI * 1.08, Math.PI * 1.92); ctx.strokeStyle = C.ink; ctx.lineWidth = 4; ctx.stroke();
+      ell(-12, -110, 11, 9, null, C.ink, 3); ell(12, -110, 11, 9, null, C.ink, 3);
+      face(mood, -110, -90);
+    } else { // 클러버: 뾰족한 머리와 선글라스
+      poly([-56, 14, -50, -100, 50, -100, 56, 14], '#2b2b2b'); poly([-14, -100, 0, -60, 14, -100], '#c9c9c9');
+      rr(-30, -176, 60, 80, 24, '#d99b6c');
+      poly([-30, -160, -24, -206, -10, -180, 0, -214, 10, -180, 24, -206, 30, -160], '#c23bd6');
+      rr(-28, -146, 56, 16, 6, C.ink);
+      ctx.beginPath();
+      if (mood === 'happy') ctx.arc(0, -118, 9, 0.15, Math.PI - 0.15);
+      else if (mood === 'angry') ctx.arc(0, -106, 9, Math.PI + 0.3, -0.3);
+      else { ctx.moveTo(-7, -112); ctx.lineTo(7, -112); }
+      ctx.strokeStyle = C.ink; ctx.lineWidth = 4; ctx.stroke();
+    }
+    if (mood === 'angry') { line(44, -190, 52, -206, C.red, 5); line(56, -180, 70, -190, C.red, 5); }
+  });
+}
+function drawCrewBust(id, cx, cy, s, f = 'neutral') { // 임시 스탠딩: NAI 이미지가 들어오기 전까지 쓰는 그림
+  at(cx, cy, s, () => {
+    const mj = id === 'minjun';
+    const sw = mj ? 150 : 128; // 어깨 너비
+    poly([-sw, 150, -sw + 14, 62, -44, 34, 44, 34, sw - 14, 62, sw, 150], C.yellow); // 유니폼
+    poly([-44, 34, 0, 78, 44, 34, 30, 28, 0, 54, -30, 28], C.brown);
+    rr(46, 84, 54, 26, 6, C.white, C.ink, 3); // 이름표
+    rr(-26, -8, 52, 50, 10, '#e9a57c'); // 목
+    rr(mj ? -66 : -60, -134, mj ? 132 : 120, 140, 46, C.skin);
+    ell(mj ? -68 : -62, -62, 10, 18, C.skin); ell(mj ? 68 : 62, -62, 10, 18, C.skin);
+    if (mj) poly([-70, -84, -74, -128, -52, -168, -34, -148, -16, -182, 2, -150, 22, -184, 36, -150, 56, -170, 74, -126, 70, -84, 50, -112, 10, -122, -30, -116], '#1c1c1c');
+    else poly([-64, -80, -66, -124, -44, -152, 0, -160, 46, -152, 66, -124, 64, -80, 48, -110, 8, -126, -28, -116], '#1c1c1c');
+    const eye = mj ? '#1c1c1c' : '#c8262b';
+    // 눈썹
+    if (mj) { line(-44, -86, -14, -84, C.ink, 7); line(44, -86, 14, -84, C.ink, 7); }
+    else if (f === 'surprised') { line(-42, -96, -16, -98, C.ink, 5); line(42, -96, 16, -98, C.ink, 5); }
+    else { line(-42, -88, -16, -92, C.ink, 5); line(42, -88, 16, -92, C.ink, 5); }
+    // 눈
+    if (f === 'smile' && !mj) {
+      ctx.beginPath(); ctx.arc(-29, -64, 11, Math.PI + 0.2, -0.2); ctx.strokeStyle = C.ink; ctx.lineWidth = 5; ctx.stroke();
+      ctx.beginPath(); ctx.arc(29, -64, 11, Math.PI + 0.2, -0.2); ctx.stroke();
+    } else {
+      const ry = f === 'surprised' ? 11 : mj ? 6 : 9;
+      ell(-29, -66, 11, ry, C.white, C.ink, 3); ell(29, -66, 11, ry, C.white, C.ink, 3);
+      const dx = f === 'shy' ? 5 : 0;
+      ell(-29 + dx, -66, 5, Math.min(ry - 1, 6), eye, null); ell(29 + dx, -66, 5, Math.min(ry - 1, 6), eye, null);
+    }
+    if (f === 'shy') { for (let i = 0; i < 3; i++) { line(-50 + i * 8, -40, -54 + i * 8, -30, C.red, 3); line(34 + i * 8, -40, 30 + i * 8, -30, C.red, 3); } }
+    line(0, -56, -5, -36, '#c98a62', 4); // 코
+    ctx.beginPath(); // 입
+    if (f === 'smile') { ctx.arc(0, -24, mj ? 9 : 18, 0.15, Math.PI - 0.15); }
+    else if (f === 'surprised') { ctx.ellipse(0, -14, 8, 9, 0, 0, Math.PI * 2); }
+    else if (f === 'shy') { ctx.moveTo(-10, -12); ctx.quadraticCurveTo(0, -18, 10, -12); }
+    else if (mj) { ctx.moveTo(-12, -14); ctx.lineTo(12, -14); }
+    else { ctx.arc(0, -20, 12, 0.3, Math.PI - 0.3); }
+    ctx.strokeStyle = C.ink; ctx.lineWidth = 5; ctx.lineCap = 'round'; ctx.stroke();
+  });
+}
+function drawStar(x, y, r, fill = C.yellow) {
+  const p = [];
+  for (let i = 0; i < 10; i++) { const a = -Math.PI / 2 + i * Math.PI / 5, q = i % 2 ? r * 0.45 : r; p.push(x + Math.cos(a) * q, y + Math.sin(a) * q); }
+  poly(p, fill, C.ink, 3);
+}
+function drawArm(x, y, s, on) { // 체력 한 칸: 아령
+  at(x, y, s, () => { const f = on ? C.red : '#d8ccb4'; rr(-12, -4, 24, 8, 3, f, C.ink, 3); rr(-18, -11, 8, 22, 3, f, C.ink, 3); rr(10, -11, 8, 22, 3, f, C.ink, 3); });
+}
+
+// ---- 이미지 슬롯: config.js 의 ART 에 적힌 파일만 불러온다 -------------------------------
+const imgs = {};
+function getImg(path) {
+  if (!path) return null;
+  if (!imgs[path]) { const im = new Image(); im.src = path; imgs[path] = im; }
+  const im = imgs[path];
+  return im.complete && im.naturalWidth ? im : null;
+}
+function drawPortrait(id, f, x, y, w, h, cgId) {
+  rr(x, y, w, h, 14, C.white);
+  const art = (window.ART && ART.crew[id]) || {};
+  const im = getImg((cgId && ART.cg[cgId]) || art[f] || art.neutral);
+  ctx.save(); ctx.beginPath(); ctx.roundRect(x + 3, y + 3, w - 6, h - 6, 12); ctx.clip();
+  if (im) {
+    const k = Math.max(w / im.naturalWidth, h / im.naturalHeight);
+    ctx.drawImage(im, x + (w - im.naturalWidth * k) / 2, y + (h - im.naturalHeight * k) / 2, im.naturalWidth * k, im.naturalHeight * k);
+  } else {
+    drawCrewBust(id, x + w / 2, y + h * 0.66, h / 300, f);
+  }
+  ctx.restore();
+  if (!im && h > 300) text('임시 그림 · 이미지 슬롯 3:2', x + w - 14, y + 22, 20, C.gray, 'right');
+}
+
+// ---- Input ------------------------------------------------------------------------------
+const down = new Set(), hit = new Set();
+const pressed = code => hit.has(code);
+const taps = []; let zones = [], zoneRects = {};
+function zone(id, x, y, w, h) { zones.push({ id, x, y, w, h, scene }); zoneRects[id] = [x, y, w, h]; }
+addEventListener('keydown', e => {
+  startAudio();
+  if (e.isComposing) return;
+  if (e.target === nameInput && e.code !== 'Enter') return;
+  if (!e.repeat) { down.add(e.code); hit.add(e.code); }
+  if (e.code === 'Space' || e.code.startsWith('Arrow')) e.preventDefault();
+});
+addEventListener('keyup', e => down.delete(e.code));
+canvas.addEventListener('pointerdown', e => {
+  startAudio();
+  const r = canvas.getBoundingClientRect();
+  taps.push({ x: (e.clientX - r.left) / r.width * W, y: (e.clientY - r.top) / r.height * H });
+  e.preventDefault();
+});
+addEventListener('pointerdown', () => startAudio());
+addEventListener('blur', () => down.clear());
+
+// ---- Audio --------------------------------------------------------------------------------
+let audio = null, muted = false;
+function startAudio() {
+  if (!audio) {
+    const ac = window.GAME_AUDIO || new (window.AudioContext || window.webkitAudioContext)();
+    const out = ac.createGain(); out.gain.value = muted ? 0 : tune.volume;
+    out.connect(ac.destination); audio = { ac, out };
+  }
+  if (audio.ac.state === 'suspended') audio.ac.resume();
+}
+function setMuted(m) { muted = m; if (audio) audio.out.gain.value = m ? 0 : tune.volume; }
+addEventListener('tune', () => setMuted(muted));
+function tone(freq, dur, type = 'square', vol = 0.3, delay = 0) {
+  if (!audio || muted) return;
+  const t = audio.ac.currentTime + delay, o = audio.ac.createOscillator(), g = audio.ac.createGain();
+  o.type = type; o.frequency.value = freq;
+  g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+  o.connect(g).connect(audio.out); o.start(t); o.stop(t + dur);
+}
+const sfx = {
+  tap: () => tone(520, 0.05, 'triangle', 0.2),
+  ready: () => tone(700, 0.08, 'triangle', 0.25),
+  serve: () => { tone(880, 0.1, 'triangle', 0.3); tone(1320, 0.14, 'triangle', 0.3, 0.08); },
+  bad: () => tone(150, 0.22, 'sawtooth', 0.2),
+  peak: () => { tone(660, 0.15, 'square', 0.2); tone(990, 0.25, 'square', 0.2, 0.15); },
+  blip: who => tone(who === 'minjun' ? 190 : who === 'seongdo' ? 330 : 260, 0.03, 'square', 0.08),
+  choice: () => { tone(600, 0.08, 'triangle', 0.25); tone(900, 0.12, 'triangle', 0.25, 0.07); },
+};
+
+// ---- 저장 -------------------------------------------------------------------------------
+const SAVE_KEY = 'golden-bun-save';
+function newSave(name) {
+  return { name: name || '신입', day: 1, aff: { seongdo: 0, minjun: 0 }, count: { seongdo: 0, minjun: 0 },
+    flags: {}, grades: [], sales: 0, stamina: tune.staminaStart };
+}
+function loadSave() { try { const s = JSON.parse(localStorage.getItem(SAVE_KEY)); return s && s.day ? s : null; } catch (e) { return null; } }
+function persist() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(state.save)); } catch (e) { /* 저장 불가: 그대로 진행 */ } }
+function wipeSave() { try { localStorage.removeItem(SAVE_KEY); } catch (e) { /* 무시 */ } }
+
+// ---- 관계와 평가 ---------------------------------------------------------------------------
+function relIdx(aff) { return aff >= tune.rel3 ? 3 : aff >= tune.rel2 ? 2 : aff >= tune.rel1 ? 1 : 0; }
+function relOf(id) { return STORY.rel[relIdx(state.save.aff[id])]; }
+function gradeOf(score) { return score >= tune.gradeS ? 'S' : score >= tune.gradeA ? 'A' : score >= tune.gradeB ? 'B' : score >= tune.gradeC ? 'C' : 'D'; }
+const GRADES = ['D', 'C', 'B', 'A', 'S'];
+function fill(s) { return s.replace(/\{name\}/g, state.save.name); }
+
+// ---- 하루 ---------------------------------------------------------------------------------
+const ITEM_NAMES = { burger: '골든번버거', double: '더블치즈번', fries: '감자튀김', drink: '음료', cone: '아이스크림 콘' };
+const ITEMS = ['burger', 'double', 'fries', 'drink', 'cone'];
+function priceOf(id) { return tune['price' + id[0].toUpperCase() + id.slice(1)]; }
+function startDay(partner) {
+  const day = state.save.day;
+  state.d = {
+    partner, time: 0, len: tune.dayLen + tune.dayLenGrow * (day - 1), peakLen: tune.peakLen + tune.peakLenGrow * (day - 1),
+    orders: [null, null, null, null], spawnT: 1.5, spawned: 0, served: 0, lost: 0, qsum: 0, n: 0, wastes: 0,
+    sold: { burger: 0, double: 0, fries: 0, drink: 0, cone: 0 }, income: 0, tips: 0, discount: 0,
+    shelf: { burger: 0, double: 0, fries: 0, drink: 0, cone: 0 }, patty: tune.pattyStart, stack: [],
+    grill: 0, fry: { s: 'idle', t: 0 }, drink: 0, cone: { s: 'idle', t: 0 },
+    ptask: null, bubble: { text: STORY.crew[partner].work.start, t: 4 }, msg: { text: '', t: 0 }, floats: [],
+    wasPeak: false, tutorial: day === 1, slow: state.save.stamina <= tune.staminaLow ? tune.tiredSlow : 1,
+  };
+}
+function inPeak(d) {
+  const t = d.time;
+  return (t >= tune.peak1Start && t < tune.peak1Start + d.peakLen) || (t >= tune.peak2Start && t < tune.peak2Start + d.peakLen);
+}
+function runs(d, what) { return STORY.crew[d.partner].runs.includes(what); } // 파트너가 맡은 일인가
+function say(d, key) { d.bubble = { text: STORY.crew[d.partner].work[key], t: 4 }; }
+function note(d, s) { d.msg = { text: s, t: 2.5 }; }
+function rating(d) { return d.n ? Math.max(0, Math.min(100, 100 * d.qsum / d.n - tune.wastePenalty * d.wastes)) : 100; }
+function waste(d, why) { d.wastes++; note(d, why); sfx.bad(); }
+function genOrder(d) {
+  const day = state.save.day; let items;
+  const teach = d.tutorial && d.spawned < tune.tutorialOrders;
+  if (teach && d.spawned === 0) items = ['burger'];
+  else if (teach && d.spawned === 1) items = ['burger', 'fries', 'drink'];
+  else {
+    const pool = [[['burger'], tune.wBurger], [['burger', 'fries', 'drink'], tune.wSet], [['fries'], tune.wFries]];
+    if (day >= 2) pool.push([['cone'], tune.wCone], [['burger', 'cone'], tune.wBurgerCone]);
+    if (day >= 3) pool.push([['double'], tune.wDouble], [['double', 'fries', 'drink'], tune.wDoubleSet]);
+    let r = rng() * pool.reduce((a, p) => a + p[1], 0);
+    items = pool[pool.length - 1][0];
+    for (const p of pool) { r -= p[1]; if (r < 0) { items = p[0]; break; } }
+  }
+  let kind = 'normal';
+  if (items.length === 1 && items[0] === 'cone' && rng() < tune.gagChance) kind = 'choco';
+  else if (!teach && rng() < tune.potatoChance) kind = 'potato';
+  let pat = (inPeak(d) ? tune.patiencePeak : tune.patienceCalm) - tune.patienceDayDrop * (day - 1);
+  if (teach) pat *= 2;
+  return { items: items.map(id => ({ id, done: false })), kind, pat, patMax: pat, look: Math.floor(rng() * 4), born: d.time };
+}
+function spawn(d) {
+  const i = d.orders.indexOf(null);
+  if (i < 0) return false;
+  const o = genOrder(d); d.orders[i] = o; d.spawned++;
+  if (o.kind === 'choco') { note(d, '손님: ' + STORY.customerLines.choco); say(d, 'choco'); }
+  if (o.kind === 'potato') { note(d, '손님: ' + STORY.customerLines.potato); say(d, 'potato'); }
+  if (d.tutorial && d.spawned === 2 && !runs(d, 'drink')) { d.ptask = { id: 'drink', t: 1.5 }; say(d, 'assist'); } // 첫날 세트의 음료는 파트너가 내 준다
+  else if (d.tutorial && d.spawned === 2) say(d, 'assist');
+  return true;
+}
+function serve(d, i) {
+  const o = d.orders[i]; if (!o) return;
+  let gave = false;
+  for (const it of o.items) if (!it.done && d.shelf[it.id] > 0) { d.shelf[it.id]--; it.done = true; gave = true; }
+  if (!gave) { note(d, '아직 준비된 메뉴가 없어요'); return; }
+  sfx.tap();
+  if (o.items.every(it => it.done)) {
+    const ids = o.items.map(it => it.id);
+    let pay = ids.reduce((a, id) => a + priceOf(id), 0);
+    if (ids.includes('fries') && ids.includes('drink')) { pay -= tune.setDiscount; d.discount += tune.setDiscount; }
+    ids.forEach(id => d.sold[id]++);
+    const fast = o.pat / o.patMax >= tune.fastFrac;
+    d.income += pay; d.qsum += fast ? 1 : tune.slowQuality; d.n++; d.served++;
+    const x = 96 + i * 176;
+    d.floats.push({ x, y: 420, text: '+' + won(pay), t: 1.2, c: C.green });
+    if (fast) { d.tips += tune.tipFast; d.floats.push({ x, y: 380, text: '팁 +' + won(tune.tipFast), t: 1.4, c: C.yellowD }); if (rng() < 0.25) say(d, 'good'); }
+    d.orders[i] = null; sfx.serve(); events.push('serve');
+  }
+}
+function tapIngredient(d, what) {
+  const st = d.stack;
+  if (what === 'trash') { if (st.length) { d.stack = []; note(d, '버렸어요'); sfx.tap(); } return; }
+  if (what === 'bun') {
+    if (!st.length) { st.push('bun'); sfx.tap(); return; }
+    st.push('bun');
+    const key = st.join(',');
+    if (key === 'bun,patty,bun') { d.shelf.burger++; sfx.ready(); }
+    else if (key === 'bun,patty,cheese,patty,bun' && state.save.day >= 3) { d.shelf.double++; sfx.ready(); }
+    else waste(d, '레시피에 없는 버거예요. 폐기!');
+    d.stack = []; return;
+  }
+  if (!st.length) { note(d, '번을 먼저 깔아 주세요'); return; }
+  if (st.length >= 4) { note(d, '너무 높아요. 번으로 덮어 주세요'); return; }
+  if (what === 'patty') {
+    if (d.patty <= 0) { note(d, runs(d, 'patty') ? '패티 굽는 중이에요' : '패티가 없어요. 그릴을 눌러 주세요'); return; }
+    d.patty--; st.push('patty'); sfx.tap();
+  } else if (what === 'cheese') {
+    if (state.save.day < 3) { note(d, '치즈는 3일차부터 써요'); return; }
+    st.push('cheese'); sfx.tap();
+  }
+}
+function tapStation(d, what) {
+  const who = STORY.crew[d.partner].name;
+  if (what === 'grill') {
+    if (runs(d, 'patty')) return note(d, who + ' 담당이에요');
+    if (d.grill > 0) return;
+    if (d.patty > tune.pattyMax - tune.grillBatch) return note(d, '패티는 충분해요');
+    d.grill = tune.grillTime * d.slow; sfx.tap();
+  } else if (what === 'fry') {
+    if (runs(d, 'fries')) return note(d, who + ' 담당이에요');
+    const f = d.fry;
+    if (f.s === 'idle') { if (d.shelf.fries >= tune.friesMax) return note(d, '감자튀김은 충분해요'); f.s = 'cook'; f.t = tune.fryTime * d.slow; sfx.tap(); }
+    else if (f.s === 'cook') note(d, '아직 덜 튀겨졌어요');
+    else if (f.s === 'done') { d.shelf.fries = Math.min(tune.friesMax, d.shelf.fries + tune.fryBatch); f.s = 'idle'; sfx.ready(); }
+    else { f.s = 'idle'; sfx.tap(); }
+  } else if (what === 'drink') {
+    if (runs(d, 'drink')) return note(d, who + ' 담당이에요');
+    if (d.drink > 0) return;
+    if (d.shelf.drink >= tune.drinkMax) return note(d, '음료는 충분해요');
+    d.drink = tune.drinkTime * d.slow; sfx.tap();
+  } else if (what === 'cone') {
+    if (state.save.day < 2) return note(d, '콘 기계는 2일차부터 써요');
+    if (runs(d, 'cone')) return note(d, who + ' 담당이에요');
+    const c = d.cone;
+    if (c.s === 'idle') { if (d.shelf.cone >= tune.coneMax) return note(d, '콘은 충분해요'); c.s = 'run'; c.t = 0; sfx.tap(); }
+    else {
+      const fr = c.t / tune.coneTime; c.s = 'idle'; d.shelf.cone++;
+      if (fr >= tune.coneLo && fr <= tune.coneHi) { d.tips += tune.tipCone; note(d, '완벽한 콘! 팁 +' + won(tune.tipCone)); sfx.serve(); }
+      else { note(d, '조금 작지만 괜찮아요'); sfx.ready(); }
+    }
+  }
+}
+function partnerWork(d, dt) { // 파트너가 맡은 구역을 알아서 채운다
+  if (d.ptask) {
+    d.ptask.t -= dt;
+    if (d.ptask.t <= 0) {
+      const id = d.ptask.id;
+      if (id === 'patty') d.patty = Math.min(tune.pattyMax, d.patty + tune.grillBatch);
+      else if (id === 'fries') d.shelf.fries = Math.min(tune.friesMax, d.shelf.fries + tune.fryBatch);
+      else d.shelf[id]++;
+      d.ptask = null;
+    }
+    return;
+  }
+  const want = id => d.orders.reduce((a, o) => a + (o ? o.items.filter(it => it.id === id && !it.done).length : 0), 0);
+  const day = state.save.day; let id = null;
+  if (runs(d, 'patty') && d.patty < 3) id = 'patty';
+  else if (runs(d, 'fries') && d.shelf.fries < Math.max(1, want('fries'))) id = 'fries';
+  else if (runs(d, 'drink') && d.shelf.drink < Math.min(tune.drinkMax, Math.max(1, want('drink')))) id = 'drink';
+  else if (runs(d, 'cone') && day >= 2 && d.shelf.cone < Math.min(tune.coneMax, Math.max(1, want('cone')))) id = 'cone';
+  if (id) d.ptask = { id, t: tune.partnerTask };
+}
+function hintFor(d) { // 첫날 첫 주문들: 다음에 누를 곳
+  if (!d.tutorial || d.n >= tune.tutorialOrders) return null;
+  let oi = -1;
+  d.orders.forEach((o, i) => { if (o && (oi < 0 || o.born < d.orders[oi].born)) oi = i; });
+  if (oi < 0) return null;
+  const o = d.orders[oi];
+  for (const it of o.items) if (!it.done && d.shelf[it.id] > 0) return 'slot' + oi;
+  for (const it of o.items) {
+    if (it.done) continue;
+    if (it.id === 'burger') {
+      if (d.stack.length === 0) return 'bun';
+      if (d.stack.length === 1) return d.patty > 0 ? 'patty' : runs(d, 'patty') ? null : 'grill';
+      return 'bun';
+    }
+    if (it.id === 'fries' && !runs(d, 'fries') && d.fry.s !== 'cook') return 'fry';
+    if (it.id === 'drink' && !runs(d, 'drink') && d.drink <= 0) return 'drink';
+  }
+  return null;
+}
+function updateDay(d, dt) {
+  d.time += dt; state.t += dt;
+  const peak = inPeak(d);
+  if (peak && !d.wasPeak) { say(d, 'peak'); sfx.peak(); events.push('peak'); }
+  if (!peak && d.wasPeak) say(d, 'calm');
+  d.wasPeak = peak;
+  // 손님
+  if (d.time < d.len) {
+    d.spawnT -= dt;
+    const teach = d.tutorial && d.n < tune.tutorialOrders && d.time < tune.peak1Start; // 안내 주문은 한 명씩, 놓치거나 피크가 오면 넘어간다
+    if (teach) { if (d.spawned <= d.n && d.spawnT <= 0) { spawn(d); d.spawnT = 1.5; } }
+    else if (d.spawnT <= 0) { if (spawn(d)) d.spawnT = peak ? tune.spawnPeak : tune.spawnCalm; else d.spawnT = 0.5; }
+  }
+  d.orders.forEach((o, i) => {
+    if (!o) return;
+    o.pat -= dt;
+    if (o.pat <= 0) { d.orders[i] = null; d.lost++; d.n++; note(d, '손님이 그냥 나갔어요. 클레임!'); say(d, 'lost'); sfx.bad(); events.push('lost'); }
+  });
+  // 구역
+  if (d.grill > 0) { d.grill -= dt; if (d.grill <= 0) { d.patty = Math.min(tune.pattyMax, d.patty + tune.grillBatch); sfx.ready(); } }
+  if (d.fry.s === 'cook') { d.fry.t -= dt; if (d.fry.t <= 0) { d.fry.s = 'done'; d.fry.t = tune.fryBurn; sfx.ready(); } }
+  else if (d.fry.s === 'done') { d.fry.t -= dt; if (d.fry.t <= 0) { d.fry.s = 'burnt'; waste(d, '감자튀김이 탔어요. 폐기!'); } }
+  if (d.drink > 0) { d.drink -= dt; if (d.drink <= 0) { d.shelf.drink++; sfx.ready(); } }
+  if (d.cone.s === 'run') { d.cone.t += dt; if (d.cone.t > tune.coneTime) { d.cone.s = 'idle'; waste(d, '콘이 넘쳤어요. 폐기!'); } }
+  partnerWork(d, dt);
+  if (d.bubble.t > 0) d.bubble.t -= dt;
+  if (d.msg.t > 0) d.msg.t -= dt;
+  d.floats = d.floats.filter(f => (f.t -= dt) > 0);
+  if (d.time >= d.len && d.orders.every(o => !o)) finishDay(d);
+}
+function finishDay(d) {
+  const sv = state.save, score = rating(d), grade = gradeOf(score);
+  const wasteCost = d.wastes * tune.wasteCost, total = d.income + d.tips - wasteCost;
+  const bonus = grade === 'S' ? tune.affS : grade === 'A' ? tune.affA : grade === 'B' ? tune.affB : 0;
+  const before = relIdx(sv.aff[d.partner]);
+  sv.aff[d.partner] += tune.affWork + bonus;
+  sv.grades.push(grade); sv.sales += total;
+  state.sum = { score, grade, wasteCost, total, gain: tune.affWork + bonus, before, after: relIdx(sv.aff[d.partner]), day: sv.day, partner: d.partner };
+  events.push('dayend:' + grade);
+  scene = 'settle';
+}
+
+// ---- 이야기 장면 (마감 후 이벤트) ----------------------------------------------------------
+function startVN(ev, who, after) {
+  const nodes = ev.nodes.filter(n => !n.if || state.save.flags[n.if]).map(n => ({ ...n }));
+  state.vn = { nodes, i: 0, chars: 0, loc: ev.loc, place: ev.place, who, face: 'neutral', after, id: ev.id, gain: 0, last: null };
+  enterNode(); scene = 'event';
+}
+function enterNode() {
+  const v = state.vn, n = v.nodes[v.i];
+  v.chars = 0;
+  if (n && n.s) { v.face = n.f || 'neutral'; if (!v.who) v.who = n.s; }
+  if (n && !n.c) v.last = n;
+}
+function vnText(n) { return fill(n.t || n.n || ''); }
+function vnNext() {
+  const v = state.vn, n = v.nodes[v.i];
+  if (!n || n.c) return;
+  const full = vnText(n).length;
+  if (v.chars < full) { v.chars = full; return; }
+  v.i++;
+  if (v.i >= v.nodes.length) { const f = v.after; f(); return; }
+  enterNode();
+}
+function vnChoose(k) {
+  const v = state.vn, n = v.nodes[v.i];
+  if (!n || !n.c || !n.c[k]) return;
+  const o = n.c[k], sv = state.save;
+  if (o.aff && v.who) { sv.aff[v.who] += o.aff; v.gain += o.aff; }
+  if (o.sta) sv.stamina = Math.min(5, sv.stamina + o.sta);
+  if (o.flag) sv.flags[o.flag] = true;
+  v.nodes.splice(v.i, 1, ...o.then.map(x => ({ ...x })));
+  sfx.choice(); events.push('choice');
+  enterNode();
+}
+function startEvent() { // 정산 뒤: 같이 근무한 크루와의 이벤트
+  const sv = state.save, sum = state.sum, id = sum.partner, cr = STORY.crew[id];
+  const list = STORY.events[id], ev = list[Math.min(sv.count[id], list.length - 1)];
+  const high = GRADES.indexOf(sum.grade) >= GRADES.indexOf('A');
+  const before = relIdx(sv.aff[id]);
+  const full = { ...ev, nodes: ev.nodes.concat(high ? ev.bonus : []) };
+  startVN(full, id, () => {
+    const v = state.vn, after = relIdx(sv.aff[id]), R = STORY.rel;
+    const change = after !== before ? `${R[before].e} ${R[before].label} → ${R[after].e} ${R[after].label}` : `${R[after].e} ${R[after].label}`;
+    const tail = [{ n: `${cr.name} 호감도 +${v.gain} · ${change}` }, { n: `${cr.name}의 속마음: "${cr.mind[after]}"` }];
+    startVN({ id: ev.id, loc: ev.loc, place: ev.place, nodes: tail }, id, endDay);
+    state.vn.face = after > before ? 'shy' : 'neutral';
+  });
+}
+function endDay() {
+  const sv = state.save;
+  sv.count[state.sum.partner]++;
+  sv.stamina = Math.max(1, Math.min(5, sv.stamina - tune.staminaDayCost + tune.staminaSleep));
+  sv.day++; persist();
+  if (sv.day > 3) { state.gained = '주간 평가'; scene = 'results'; } else scene = 'pick';
+}
+
+// ---- Scenes -------------------------------------------------------------------------------
+let scene, state;
+function reset() {
+  seed = Number(params.get('seed')) || CONFIG.seed;
+  state = { t: 0, score: 0, gained: '', save: newSave('신입') };
+  startDay('seongdo'); // ?scene=play 로 바로 열어도 근무가 돌아가게
+}
+function button(id, x, y, w, h, label, fillC = C.yellow, size = 26) {
+  rr(x, y + 5, w, h, 16, C.ink, null); rr(x, y, w, h, 16, fillC);
+  text(label, x + w / 2, y + h / 2, size, C.ink, 'center', true);
+  zone(id, x, y, w, h);
+}
+function tiles(y0, y1, c1, c2) {
+  ctx.fillStyle = c1; ctx.fillRect(0, y0, W, y1 - y0);
+  ctx.strokeStyle = c2; ctx.lineWidth = 2;
+  for (let x = 0; x <= W; x += 60) { ctx.beginPath(); ctx.moveTo(x, y0); ctx.lineTo(x, y1); ctx.stroke(); }
+  for (let y = y0; y <= y1; y += 60) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+}
+function drawLoc(loc) { // 이벤트 배경
+  const L = { crewroom: ['#d9e3ea', '#b9c7d1'], alley: ['#5b4a4a', '#463838'], hall: ['#3b3550', '#2c2740'], grill: ['#cfd5da', '#aeb6bd'], freezer: ['#cfeaf7', '#a9d3e8'], eaves: ['#3d4a5c', '#2c3747'] }[loc] || ['#eee', '#ddd'];
+  tiles(0, H, L[0], L[1]);
+  if (loc === 'crewroom') for (let i = 0; i < 5; i++) { rr(30 + i * 134, 90, 120, 520, 8, '#8fa3b5'); rr(50 + i * 134, 130, 80, 16, 4, C.ink, null); }
+  if (loc === 'alley') { rr(470, 60, 200, 140, 10, C.steel); for (let i = 0; i < 5; i++) line(490, 84 + i * 24, 650, 84 + i * 24); rr(40, 420, 130, 200, 10, '#2f7d3a'); }
+  if (loc === 'hall') { rr(40, 60, 640, 300, 10, '#1b1830'); ell(560, 140, 34, 34, '#f4f0c8', null); for (let i = 0; i < 3; i++) { rr(60 + i * 220, 500, 160, 20, 6, C.brown); rr(90 + i * 220, 440, 100, 60, 8, C.red); } }
+  if (loc === 'grill') { poly([60, 40, 660, 40, 600, 150, 120, 150], C.steel); rr(60, 480, 600, 130, 10, '#59606a'); for (let i = 0; i < 6; i++) line(100 + i * 100, 500, 100 + i * 100, 590, '#3b4048', 6); }
+  if (loc === 'freezer') { for (let i = 0; i < 6; i++) rr(40 + (i % 3) * 220, 80 + Math.floor(i / 3) * 260, 190, 220, 8, '#c9a26b'); for (let i = 0; i < 18; i++) ell(40 + (i * 97) % 640, 30 + (i * 53) % 600, 5, 5, C.white, null); }
+  if (loc === 'eaves') { rr(0, 0, W, 70, 0, '#1f2733'); for (let i = 0; i < 40; i++) { const x = (i * 61 + state.t * 40) % W, y = (i * 97 + state.t * 900) % 620 + 70; line(x, y, x - 6, y + 26, '#9fc3e6', 3); } }
+}
+
+const scenes = {
+  figures: {
+    keys: {}, act() {},
+    update(dt) { state.t += dt; },
+    draw() {
+      tiles(0, H, C.cream, C.tile);
+      text('손님', W / 2, 60, 32, C.ink, 'center', true);
+      CUSTOMER_NAMES.forEach((n, i) => { drawCustomer(i, 96 + i * 176, 330, ['happy', 'ok', 'angry', 'ok'][i]); text(n, 96 + i * 176, 370, 24, C.ink); });
+      text('크루 (임시 스탠딩)', W / 2, 440, 32, C.ink, 'center', true);
+      drawCrewBust('seongdo', 190, 640, 0.9, 'smile'); text('성도', 190, 800, 24, C.ink);
+      drawCrewBust('minjun', 530, 640, 0.9, 'neutral'); text('민준', 530, 800, 24, C.ink);
+      text('메뉴', W / 2, 880, 32, C.ink, 'center', true);
+      ITEMS.forEach((id, i) => { drawItem(id, 80 + i * 140, 990, 1.2); text(ITEM_NAMES[id], 80 + i * 140, 1060, 20, C.ink); });
+      drawBunny(360, 1180, 1.2); text('버니', 360, 1240, 24, C.ink);
+    },
+  },
+  title: {
+    keys: { Enter: 'start', KeyC: 'continue' },
+    act(id) {
+      if (id === 'start') {
+        wipeSave(); reset();
+        state.save = newSave((nameInput.value || '').trim().slice(0, 8));
+        startVN(STORY.intro, null, () => { scene = 'pick'; });
+      } else if (id === 'continue') {
+        const s = loadSave(); if (!s) return;
+        reset(); state.save = s; scene = s.day > 3 ? 'results' : 'pick';
+      }
+    },
+    update(dt) { state.t += dt; },
+    draw() {
+      tiles(0, H, C.yellow, '#f5b400');
+      rr(60, 90, 600, 440, 30, C.cream);
+      drawBunny(360, 250, 2.4);
+      text('GOLDEN BUN', 360, 372, 40, '#b3261a', 'center', true);
+      text('골든번 이태원역점', 360, 440, 52, C.ink, 'center', true);
+      text('신입 알바의 3일', 360, 496, 26, C.brown);
+      CONTROLS.forEach((c, i) => text(c, 360, 590 + i * 38, 22, C.ink));
+      text('이름', 360, 740, 24, C.ink, 'center', true);
+      button('start', 160, 870, 400, 100, '새로 시작', C.red, 36);
+      if (loadSave()) button('continue', 160, 1000, 400, 90, '이어하기', C.white, 30);
+      text('근무 실패는 없어요. 하루가 끝나면 평가만 남습니다.', 360, 1180, 22, C.ink);
+    },
+  },
+  event: {
+    keys: { Enter: 'next', Space: 'next', Digit1: 'c0', Digit2: 'c1', Digit3: 'c2' },
+    act(id) { if (id === 'next') vnNext(); else vnChoose(Number(id[1])); },
+    update(dt) {
+      state.t += dt;
+      const v = state.vn, n = v.nodes[v.i];
+      if (n && !n.c) {
+        const before = Math.floor(v.chars);
+        v.chars = Math.min(vnText(n).length, v.chars + tune.typeSpeed * dt);
+        if (Math.floor(v.chars) > before && Math.floor(v.chars) % 3 === 0) sfx.blip(n.s);
+      }
+    },
+    draw() {
+      const v = state.vn, n = v.nodes[v.i];
+      drawLoc(v.loc);
+      rr(30, 30, 300, 60, 16, C.cream); text(v.place, 180, 60, 26, C.ink, 'center', true);
+      if (v.who) {
+        const R = relOf(v.who);
+        rr(420, 30, 270, 60, 16, C.cream); text(`${R.e} ${R.label}`, 555, 60, 26, C.ink, 'center', true);
+        drawPortrait(v.who, v.face, 30, 130, 660, 440, v.id);
+      } else drawPortrait('seongdo', v.face, 30, 130, 660, 440, null);
+      const show = n && n.c ? v.last : n;
+      rr(30, 610, 660, 300, 20, C.cream);
+      if (show) {
+        const s = vnText(show), shown = n && n.c ? s : s.slice(0, Math.floor(v.chars));
+        if (show.s) { rr(50, 584, 180, 56, 14, C.yellow); text(STORY.crew[show.s].name, 140, 612, 28, C.ink, 'center', true); }
+        para(shown, 62, 690, 596, 28, show.s ? C.ink : C.brown, 44);
+      }
+      if (n && n.c) n.c.forEach((o, k) => button('c' + k, 30, 940 + k * 106, 660, 88, `${k + 1}. ${o.t}`, C.white, 24));
+      else { zone('next', 0, 0, W, H); text('탭해서 계속', 360, 1230, 22, C.cream); }
+    },
+  },
+  pick: {
+    keys: { Digit1: 'p_seongdo', Digit2: 'p_minjun' },
+    act(id) { if (id.startsWith('p_')) { startDay(id.slice(2)); scene = 'play'; sfx.choice(); } },
+    update(dt) { state.t += dt; },
+    draw() {
+      const sv = state.save, sh = STORY.shifts[Math.min(sv.day - 1, 2)];
+      tiles(0, H, C.cream, C.tile);
+      rr(0, 0, W, 150, 0, C.ink, null);
+      text(`${sv.day}일차 · ${sh.name}조 ${String(sh.hour).padStart(2, '0')}:00`, 360, 52, 36, C.white, 'center', true);
+      text('오늘 같이 근무할 크루를 골라 주세요', 360, 110, 24, C.yellow);
+      ['seongdo', 'minjun'].forEach((id, i) => {
+        const cr = STORY.crew[id], R = relOf(id), y = 180 + i * 500;
+        rr(30, y + 6, 660, 470, 24, C.ink, null); rr(30, y, 660, 470, 24, C.white);
+        drawPortrait(id, 'neutral', 50, y + 20, 390, 260, null);
+        text(`${i + 1}. ${cr.full}`, 565, y + 60, 30, C.ink, 'center', true);
+        text(cr.role, 565, y + 104, 22, C.brown);
+        text(`${R.e} ${R.label}`, 565, y + 170, 28, C.ink, 'center', true);
+        text(`같이 근무 ${sv.count[id]}회`, 565, y + 220, 22, C.brown);
+        rr(50, y + 300, 620, 60, 14, C.yellow); text(cr.station, 360, y + 330, 26, C.ink, 'center', true);
+        para(`속마음: "${cr.mind[relIdx(sv.aff[id])]}"`, 60, y + 400, 600, 24, C.ink, 34);
+        zone('p_' + id, 30, y, 660, 470);
+      });
+      text('체력', 250, 1210, 22, C.ink, 'right');
+      for (let i = 0; i < 5; i++) drawArm(290 + i * 50, 1210, 1, i < sv.stamina);
+      if (sv.stamina <= tune.staminaLow) text('지쳐서 손이 조금 느려요', 360, 1250, 20, C.red);
+    },
+  },
+  play: {
+    keys: { KeyQ: 'bun', KeyW: 'patty', KeyE: 'cheese', KeyR: 'trash', KeyA: 'grill', KeyS: 'fry', KeyD: 'drink', KeyF: 'cone',
+      Digit1: 'slot0', Digit2: 'slot1', Digit3: 'slot2', Digit4: 'slot3', KeyP: 'pause', Escape: 'pause' },
+    act(id) {
+      const d = state.d;
+      if (id === 'pause') { scene = 'pause'; return; }
+      if (id.startsWith('slot')) serve(d, Number(id[4]));
+      else if (['bun', 'patty', 'cheese', 'trash'].includes(id)) tapIngredient(d, id);
+      else tapStation(d, id);
+    },
+    update(dt) { updateDay(state.d, dt); },
+    draw() { drawPlay(); },
+  },
+  pause: {
+    keys: { KeyP: 'resume', Escape: 'resume', Enter: 'resume' },
+    act(id) { if (id === 'resume') scene = 'play'; else if (id === 'mute') setMuted(!muted); },
+    update() {},
+    draw() {
+      drawPlay(); zones = []; zoneRects = {};
+      ctx.fillStyle = 'rgba(58,36,20,0.7)'; ctx.fillRect(0, 0, W, H);
+      text('일시정지', 360, 480, 56, C.white, 'center', true);
+      button('resume', 160, 580, 400, 100, '계속하기', C.yellow, 34);
+      button('mute', 160, 710, 400, 90, muted ? '소리 켜기' : '소리 끄기', C.white, 28);
+    },
+  },
+  settle: {
+    keys: { Enter: 'next' },
+    act(id) { if (id === 'next') startEvent(); },
+    update(dt) { state.t += dt; },
+    draw() {
+      const d = state.d, s = state.sum, sv = state.save, cr = STORY.crew[s.partner], R = STORY.rel;
+      tiles(0, H, C.cream, C.tile);
+      rr(0, 0, W, 110, 0, C.ink, null); text(`${s.day}일차 정산`, 360, 56, 40, C.white, 'center', true);
+      rr(40, 140, 640, 210, 24, C.white);
+      drawStar(150, 245, 70); text(s.grade, 150, 250, 64, C.ink, 'center', true);
+      text('근무평가', 440, 190, 26, C.brown); text(`${Math.round(s.score)}점`, 440, 245, 52, C.ink, 'center', true);
+      text(`제공 ${d.served}건 · 클레임 ${d.lost}건 · 폐기 ${d.wastes}건`, 440, 310, 22, C.ink);
+      rr(40, 376, 640, 400, 24, C.white);
+      text('매출 내역', 70, 412, 26, C.ink, 'left', true);
+      let y = 458;
+      const row = (a, b, c = C.ink) => { text(a, 70, y, 24, c, 'left'); text(b, 650, y, 24, c, 'right'); y += 40; };
+      ITEMS.forEach(id => { if (d.sold[id]) row(`${ITEM_NAMES[id]} × ${d.sold[id]}`, won(priceOf(id) * d.sold[id])); });
+      if (d.discount) row('세트 할인', '-' + won(d.discount), C.brown);
+      if (d.tips) row('팁', '+' + won(d.tips), C.green);
+      if (s.wasteCost) row('폐기', '-' + won(s.wasteCost), C.red);
+      line(70, 716, 650, 716, C.ink, 3);
+      text('오늘 합계', 70, 746, 26, C.ink, 'left', true); text(won(s.total), 650, 746, 30, C.ink, 'right', true);
+      rr(40, 800, 640, 250, 24, C.white);
+      drawPortrait(s.partner, s.after > s.before ? 'smile' : 'neutral', 60, 820, 240, 160, null);
+      text(`${cr.name} 호감도 +${s.gain}`, 480, 860, 28, C.ink, 'center', true);
+      text(s.after !== s.before ? `${R[s.before].e} → ${R[s.after].e} ${R[s.after].label}` : `${R[s.after].e} ${R[s.after].label}`, 480, 915, 28, C.ink);
+      text(GRADES.indexOf(s.grade) >= 3 ? '평가가 좋아 이벤트에 장면이 추가돼요' : 'A 이상이면 이벤트에 장면이 추가돼요', 480, 962, 20, C.brown);
+      text('체력', 250, 1018, 22, C.ink, 'right'); for (let i = 0; i < 5; i++) drawArm(290 + i * 50, 1018, 1, i < sv.stamina);
+      button('next', 160, 1100, 400, 100, '마감 후…', C.red, 36);
+    },
+  },
+  results: {
+    keys: { Enter: 'restart' },
+    act(id) { if (id === 'restart') { wipeSave(); reset(); scene = 'title'; } },
+    update(dt) { state.t += dt; },
+    draw() {
+      const sv = state.save;
+      tiles(0, H, C.yellow, '#f5b400');
+      rr(40, 40, 640, 300, 24, C.cream);
+      drawBunny(140, 130, 1.3);
+      text('주간 평가', 420, 100, 44, C.ink, 'center', true);
+      const avg = sv.grades.length ? GRADES[Math.round(sv.grades.reduce((a, g) => a + GRADES.indexOf(g), 0) / sv.grades.length)] : '-';
+      text(`평균 ${avg} · 일별 ${sv.grades.join(' ')}`, 420, 160, 26, C.ink);
+      text(`주간 매출 ${won(sv.sales)}`, 360, 240, 34, C.red, 'center', true);
+      text(`${sv.name} · 수습 크루`, 360, 296, 24, C.brown);
+      ['seongdo', 'minjun'].forEach((id, i) => {
+        const cr = STORY.crew[id], k = relIdx(sv.aff[id]), R = STORY.rel[k], y = 370 + i * 340;
+        rr(40, y, 640, 320, 24, C.white);
+        drawPortrait(id, k >= 2 ? 'smile' : 'neutral', 60, y + 20, 240, 160, null);
+        text(cr.full, 490, y + 60, 30, C.ink, 'center', true);
+        text(`${R.e} ${R.label}`, 490, y + 120, 28, C.ink);
+        para(sv.count[id] ? fill(cr.ending[k]) : '이번 주에는 같은 조가 된 적이 없다.', 64, y + 220, 592, 24, C.ink, 36);
+      });
+      button('restart', 160, 1080, 400, 100, '처음부터 다시', C.red, 34);
+      text('3일의 근무가 끝났습니다', 360, 1230, 22, C.ink);
+    },
+  },
+};
+
+function drawPlay() {
+  const d = state.d, sv = state.save, day = sv.day, sh = STORY.shifts[Math.min(day - 1, 2)], peak = inPeak(d), cr = STORY.crew[d.partner];
+  // 벽과 간판
+  const wall = [[C.cream, C.tile], ['#ffe2bd', '#f2c592'], ['#d5d9ee', '#b7bedd']][Math.min(day - 1, 2)]; // 근무조에 따라 매장 빛이 달라진다
+  tiles(136, 440, wall[0], wall[1]);
+  rr(0, 136, W, 54, 0, peak && Math.floor(state.t * 4) % 2 ? '#ff8a6b' : C.yellow);
+  drawBunny(40, 170, 0.5); drawBunny(680, 170, 0.5);
+  text(peak ? '피크타임!' : 'GOLDEN BUN', 360, 164, 30, C.ink, 'center', true);
+  // 손님과 주문표
+  d.orders.forEach((o, i) => {
+    const x = 96 + i * 176;
+    if (!o) return;
+    const fr = o.pat / o.patMax, mood = fr > 0.6 ? 'happy' : fr > 0.28 ? 'ok' : 'angry';
+    drawCustomer(o.look, x, 484, mood, 0.86);
+    const rc = [x - 80, 198, x + 80, 198, x + 80, 306]; // 주문표는 영수증 롤에서 뜯은 모양
+    for (let k = 0; k < 8; k++) rc.push(x + 80 - k * 20 - 10, 314, x + 80 - (k + 1) * 20, 306);
+    poly(rc, C.white);
+    line(x - 66, 212, x + 66, 212, '#d8ccb4', 2);
+    const n = o.items.length;
+    o.items.forEach((it, k) => {
+      const ix = x + (k - (n - 1) / 2) * 50;
+      ctx.globalAlpha = it.done ? 0.3 : 1; drawItem(it.id, ix, 240, 0.55); ctx.globalAlpha = 1;
+      if (it.done) poly([ix - 12, 240, ix - 3, 250, ix + 14, 228], null, C.green, 6, false);
+    });
+    rr(x - 68, 282, 136, 14, 6, '#e8dcc4', C.ink, 2);
+    rr(x - 68, 282, Math.max(8, 136 * fr), 14, 6, fr > 0.6 ? C.green : fr > 0.28 ? C.yellowD : C.red, null);
+    zone('slot' + i, x - 86, 194, 172, 250);
+  });
+  // 카운터
+  rr(-4, 440, W + 8, 84, 0, C.brown); rr(-4, 440, W + 8, 18, 0, '#b07a45');
+  for (let i = 0; i < 4; i++) if (!d.orders[i]) text(String(i + 1), 96 + i * 176, 490, 24, C.cream, 'center', true);
+  d.floats.forEach(f => { ctx.globalAlpha = Math.min(1, f.t * 2); text(f.text, f.x, f.y - (1.4 - f.t) * 50, 26, f.c, 'center', true); ctx.globalAlpha = 1; });
+  // 완성품 선반
+  rr(-4, 524, W + 8, 92, 0, C.steel);
+  text('완성', 44, 570, 22, C.ink, 'center', true);
+  const shown = ITEMS.filter(id => (id !== 'cone' || day >= 2) && (id !== 'double' || day >= 3));
+  shown.forEach((id, i) => {
+    const x = 130 + i * 122, n = d.shelf[id];
+    ctx.globalAlpha = n ? 1 : 0.3; drawItem(id, x, 568, 0.7); ctx.globalAlpha = 1;
+    text('×' + n, x + 44, 584, 24, n ? C.ink : '#5c6670', 'center', true);
+  });
+  // 파트너
+  rr(-4, 616, W + 8, 104, 0, C.cream);
+  ctx.save(); ctx.beginPath(); ctx.roundRect(14, 624, 92, 88, 14); ctx.clip(); ctx.fillStyle = C.white; ctx.fillRect(14, 624, 92, 88);
+  drawCrewBust(d.partner, 60, 690, 0.3, peak ? 'surprised' : 'smile'); ctx.restore(); rr(14, 624, 92, 88, 14, null);
+  text(cr.name, 124, 644, 24, C.ink, 'left', true);
+  text(d.ptask ? `${{ patty: '패티', fries: '감자튀김', drink: '음료', cone: '콘' }[d.ptask.id]} 준비 중` : cr.station, 124, 678, 20, C.brown, 'left');
+  text(relOf(d.partner).e, 124, 704, 20, C.ink, 'left');
+  if (d.bubble.t > 0) { rr(330, 628, 376, 80, 16, C.white, C.ink, 3); para(d.bubble.text, 518, 654, 350, 22, C.ink, 28, 'center'); }
+  // 작업대
+  tiles(720, H, '#ead29a', '#dcc184');
+  rr(20, 730, 330, 240, 16, C.steel);
+  text('조립대', 185, 754, 22, C.ink, 'center', true);
+  let sy = 944;
+  d.stack.forEach((p, k) => {
+    if (p === 'bun' && k === 0) { rr(105, sy - 18, 160, 20, 8, '#f6c873'); sy -= 20; }
+    else if (p === 'patty') { rr(100, sy - 20, 170, 20, 8, C.patty); sy -= 22; }
+    else if (p === 'cheese') { poly([96, sy, 274, sy, 262, sy - 12, 108, sy - 12], C.cheese); sy -= 12; }
+  });
+  if (!d.stack.length) text('번부터 쌓아요', 185, 880, 22, '#4a545e');
+  rr(364, 730, 336, 240, 16, C.white);
+  text('레시피', 532, 756, 22, C.ink, 'center', true);
+  drawItem('burger', 400, 808, 0.5); text('골든번버거', 436, 796, 22, C.ink, 'left', true); text('번 · 패티 · 번', 436, 824, 20, C.brown, 'left');
+  if (day >= 3) { drawItem('double', 400, 872, 0.5); text('더블치즈번', 436, 860, 22, C.ink, 'left', true); text('번·패티·치즈·패티·번', 436, 888, 20, C.brown, 'left'); }
+  if (d.msg.t > 0) { rr(374, 908, 316, 54, 10, '#ffe9e4', C.red, 3); para(d.msg.text, 532, 924 + (wrap(d.msg.text, 296, 20).length > 1 ? 0 : 11), 296, 20, C.red, 22, 'center'); }
+  // 재료 버튼
+  const ing = [['bun', '번'], ['patty', `패티 ×${d.patty}`], ['cheese', day >= 3 ? '치즈' : '치즈 (3일차)'], ['trash', '버리기']];
+  ing.forEach(([id, label], i) => {
+    const x = 20 + i * 172, off = (id === 'cheese' && day < 3) || (id === 'patty' && d.patty <= 0);
+    rr(x, 987, 164, 100, 16, C.ink, null); rr(x, 982, 164, 100, 16, off ? '#e8dcc4' : id === 'trash' ? C.white : C.yellow);
+    ctx.globalAlpha = off ? 0.4 : 1; drawItem(id, x + 82, 1016, 0.6); ctx.globalAlpha = 1;
+    text(label, x + 82, 1062, 20, C.ink, 'center', true);
+    zone(id, x, 982, 164, 100);
+  });
+  // 구역
+  const st = [['grill', '그릴', 'patty'], ['fry', '프라이어', 'fries'], ['drink', '음료', 'drink'], ['cone', '콘', 'cone']];
+  st.forEach(([id, label, job], i) => {
+    const x = 20 + i * 172, y = 1096, theirs = runs(d, job), locked = id === 'cone' && day < 2;
+    rr(x, y + 5, 164, 172, 16, C.ink, null); rr(x, y, 164, 172, 16, theirs || locked ? '#e8dcc4' : C.white);
+    text(label, x + 82, y + 24, 22, C.ink, 'center', true);
+    let status = '', prog = -1, pc = C.green;
+    if (locked) status = '2일차부터';
+    else if (theirs) { status = cr.name + ' 담당'; if (d.ptask && d.ptask.id === job) prog = 1 - d.ptask.t / tune.partnerTask; }
+    else if (id === 'grill') { if (d.grill > 0) { status = '굽는 중'; prog = 1 - d.grill / (tune.grillTime * d.slow); } else status = '눌러서 굽기'; }
+    else if (id === 'fry') {
+      const f = d.fry;
+      if (f.s === 'cook') { status = '튀기는 중'; prog = 1 - f.t / (tune.fryTime * d.slow); }
+      else if (f.s === 'done') { status = '건지세요!'; prog = f.t / tune.fryBurn; pc = C.red; }
+      else if (f.s === 'burnt') status = '탔어요. 비우기';
+      else status = '눌러서 튀기기';
+    } else if (id === 'drink') { if (d.drink > 0) { status = '따르는 중'; prog = 1 - d.drink / (tune.drinkTime * d.slow); } else status = '눌러서 따르기'; }
+    else if (id === 'cone') {
+      if (d.cone.s === 'run') { status = '초록에서 멈추기!'; prog = d.cone.t / tune.coneTime; pc = C.white; } else status = '눌러서 뽑기';
+    }
+    const icon = { grill: 'patty', fry: 'fries', drink: 'drink', cone: 'cone' }[id];
+    ctx.globalAlpha = theirs || locked ? 0.45 : 1;
+    if (id === 'fry' && d.fry.s === 'burnt') { ctx.filter = 'brightness(0.35)'; drawItem(icon, x + 82, y + 78, 0.8); ctx.filter = 'none'; }
+    else drawItem(icon, x + 82, y + 78, 0.8);
+    ctx.globalAlpha = 1;
+    if (prog >= 0) {
+      rr(x + 14, y + 118, 136, 14, 6, '#e8dcc4', C.ink, 2);
+      if (id === 'cone' && !theirs) { rr(x + 14 + 136 * tune.coneLo, y + 118, 136 * (tune.coneHi - tune.coneLo), 14, 0, C.green, null); rr(x + 12 + 136 * Math.min(1, prog), y + 112, 6, 26, 2, C.ink, null); }
+      else rr(x + 14, y + 118, Math.max(8, 136 * Math.min(1, prog)), 14, 6, pc, null);
+    }
+    text(status, x + 82, y + 150, 20, status.endsWith('!') ? C.red : C.brown, 'center', true);
+    zone(id, x, y, 164, 172);
+  });
+  // HUD
+  rr(0, 0, W, 92, 0, C.ink, null);
+  const mins = sh.hour * 60 + Math.floor(d.time * tune.clockRate), hh = String(Math.floor(mins / 60) % 24).padStart(2, '0'), mm = String(mins % 60).padStart(2, '0');
+  text(`${day}일차 · ${sh.name}조 ${hh}:${mm}`, 20, 30, 24, C.white, 'left', true);
+  text('체력', 20, 66, 20, C.cream, 'left'); for (let i = 0; i < 5; i++) drawArm(92 + i * 44, 66, 0.8, i < sv.stamina);
+  const sc = rating(d);
+  drawStar(350, 44, 30); text(gradeOf(sc), 350, 47, 26, C.ink, 'center', true);
+  text(`${Math.round(sc)}점`, 420, 46, 24, C.white, 'center', true);
+  text(won(d.income + d.tips), 620, 30, 26, C.yellow, 'right', true);
+  text(`클레임 ${d.lost}`, 620, 66, 20, d.lost ? '#ff9c8a' : C.cream, 'right');
+  rr(644, 16, 60, 60, 12, C.yellow); rr(662, 30, 8, 32, 2, C.ink, null); rr(678, 30, 8, 32, 2, C.ink, null); zone('pause', 636, 8, 76, 76);
+  // 목표
+  rr(0, 92, W, 44, 0, '#5a3a22', null);
+  const p1 = tune.peak1Start, p2 = tune.peak2Start, t = d.time;
+  const now = peak ? '지금: 피크타임 버티기' : t < p1 ? `지금: 피크까지 ${Math.ceil(p1 - t)}초` : t < p2 ? `지금: 피크까지 ${Math.ceil(p2 - t)}초` : t < d.len ? `지금: 마감까지 ${Math.ceil(d.len - t)}초` : '지금: 남은 손님 보내기';
+  text(now, 16, 114, 20, C.white, 'left', true);
+  text('오늘: A 이상', 420, 114, 20, C.cream, 'center');
+  text(`이번 주: ${day}/3일`, 704, 114, 20, C.cream, 'right');
+  // 손 안내
+  const h = hintFor(d);
+  if (h && zoneRects[h]) {
+    const [x, y, w, hh2] = zoneRects[h], k = 4 + Math.sin(state.t * 8) * 4;
+    rr(x - k, y - k, w + k * 2, hh2 + k * 2, 20, null, C.red, 7);
+    rr(x + w / 2 - 44, y - 34 - k, 88, 34, 10, C.red, null); text('여기!', x + w / 2, y - 17 - k, 22, C.white, 'center', true);
+  }
+}
+
+// ---- Loop: fixed step, frame time clamped ---------------------------------------------
+function step() {
+  if (pressed('KeyM')) { setMuted(!muted); hit.delete('KeyM'); }
+  const sc = scenes[scene];
+  while (taps.length) { // 탭은 마지막으로 그린 화면의 영역으로 판정
+    const p = taps.shift();
+    for (let i = zones.length - 1; i >= 0; i--) {
+      const z = zones[i];
+      if (z.scene === scene && p.x >= z.x && p.x <= z.x + z.w && p.y >= z.y && p.y <= z.y + z.h) { scenes[scene].act(z.id); break; }
+    }
+  }
+  for (const code in sc.keys) if (scene === sc.name && pressed(code)) scenes[scene].act(sc.keys[code]);
+  scenes[scene].update(STEP); hit.clear();
+}
+for (const k in scenes) scenes[k].name = k;
+let last, acc = 0, ALPHA = 1;
+function tick() {
+  const now = clock.now();
+  acc += Math.min(now - last, 0.25); last = now;
+  while (acc >= STEP) { step(); acc -= STEP; }
+  ALPHA = acc / STEP;
+  drawFrame();
+}
+function drawFrame() {
+  zones = []; zoneRects = {};
+  scenes[scene].draw();
+  nameInput.style.display = scene === 'title' ? 'block' : 'none';
+}
+function frame() { tick(); requestAnimationFrame(frame); }
+function timer() { if (document.visibilityState === 'visible' && clock.now() - last > 0.1) tick(); }
+
+// ---- What a check can read and drive (?manual=1 stops the loop; players never see it) ----
+window.game = {
+  get scene() { return scene; },
+  get state() { return state; },
+  press(code) { hit.add(code); },
+  hold(code, on) { on ? down.add(code) : down.delete(code); },
+  get events() { return events; },
+  step(n = 1, draw = true, alpha = 1) {
+    for (let i = 0; i < n; i++) step();
+    if (draw) { ALPHA = alpha; drawFrame(); }
+  },
+};
+
+reset();
+scene = params.get('scene') || 'title';
+last = clock.now();
+if (params.get('manual') === '1') drawFrame();
+else { requestAnimationFrame(frame); setInterval(timer, 50); }
+</script>
+</body>
+</html>
