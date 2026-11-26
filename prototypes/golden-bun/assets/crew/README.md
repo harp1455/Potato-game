@@ -6,8 +6,12 @@
 
 ```js
 crew: {
-  seongdo: { neutral: 'assets/crew/seongdo.webp', smile: 'assets/crew/seongdo_smile.webp' },
-  minjun:  { neutral: 'assets/crew/minjun.webp' },
+  seongdo:   { neutral: 'assets/crew/seongdo.webp', smile: 'assets/crew/seongdo_smile.webp' },
+  minjun:    { neutral: 'assets/crew/minjun.webp' },
+  gwangsik:  { neutral: 'assets/crew/gwangsik.webp' },
+  gwancheol: { neutral: 'assets/crew/gwancheol.webp' },
+  daeheon:   { neutral: 'assets/crew/daeheon.webp' },
+  taebeom:   { neutral: 'assets/crew/taebeom.webp' },
 },
 cg: { minjun3: 'assets/crew/cg_minjun3.webp' },
 ```
