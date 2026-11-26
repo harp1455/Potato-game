@@ -10,6 +10,7 @@
 <style>
   html, body { margin: 0; height: 100%; background: #16202b; overflow: hidden; }
   body { font-variant-numeric: tabular-nums; }
+  @font-face { font-family: 'GB Title'; src: url('assets/fonts/BlackHanSans-title.woff2') format('woff2'); font-display: swap; }
   @font-face { font-family: 'Jua'; src: url('assets/fonts/Jua-Regular.woff2') format('woff2'); font-display: swap; }
   canvas { display: block; margin: 0 auto; touch-action: none; }
   #nm { position: fixed; display: none; box-sizing: border-box; text-align: center; border: 4px solid #22303f;
@@ -605,21 +606,30 @@ function getImg(path) {
   const im = imgs[path];
   return im.complete && im.naturalWidth ? im : null;
 }
+// 표정 이름: neutral, smile, shy, surprised, flustered, happy, work, annoyed, angry, tears, scorn. 없는 표정은 가까운 것으로 대신한다.
+const FACE_ALIAS = { surprised: 'flustered', flustered: 'surprised', happy: 'smile', work: 'neutral', annoyed: 'angry', angry: 'annoyed', tears: 'shy', scorn: 'annoyed' };
+const BUST_FACE = { flustered: 'surprised', happy: 'smile', work: 'neutral', annoyed: 'neutral', angry: 'neutral', tears: 'shy', scorn: 'neutral' };
+function artKey(id, f) { const art = (window.ART && ART.crew[id]) || {}; return art[f] ? f : art[FACE_ALIAS[f]] ? FACE_ALIAS[f] : art.neutral ? 'neutral' : null; }
 function drawPortrait(id, f, x, y, w, h, cgId, o = {}) {
-  const cr = STORY.crew[id], art = (window.ART && ART.crew[id]) || {};
-  const im = getImg((cgId && ART.cg[cgId]) || art[f] || art.neutral);
-  panel(x, y, w, h, o.r || 16, C.white, im ? C.white : C.steel, { shadow: o.shadow === undefined ? 6 : o.shadow, gloss: false });
+  const cr = STORY.crew[id], art = (window.ART && ART.crew[id]) || {}, key = artKey(id, f), cg = cgId && ART.cg[cgId];
+  const im = getImg(cg || (key && art[key]));
+  const F = !cg && key && ART.face && ART.face[id] && ART.face[id][key]; // 배경을 지운 스탠딩이면 얼굴 위치 [가운데 x, 가운데 y, 크기]
+  panel(x, y, w, h, o.r || 16, C.white, C.white, { shadow: o.shadow === undefined ? 6 : o.shadow, lip: false });
   ctx.save(); ctx.beginPath(); ctx.roundRect(x + 3, y + 3, w - 6, h - 6, (o.r || 16) - 2); ctx.clip();
-  if (im) {
+  if (!im || F) { ctx.fillStyle = cr.color; ctx.globalAlpha = 0.22; ctx.fillRect(x, y, w, h); ctx.globalAlpha = 1; }
+  if (im && F && h >= 300) { // 큰 칸: 전신을 위에 맞춰 그대로
+    const k = h / im.naturalHeight * 1.04;
+    ctx.drawImage(im, x + (w - im.naturalWidth * k) / 2, y, im.naturalWidth * k, im.naturalHeight * k);
+  } else if (im && F) { // 작은 칸: 얼굴 쪽을 당겨서
+    const fs = F[2] * im.naturalHeight, sh = fs * (w / h > 1.3 ? 1.45 : 1.15), sw = sh * w / h;
+    ctx.drawImage(im, F[0] * im.naturalWidth - sw / 2, F[1] * im.naturalHeight - fs * 0.54, sw, sh, x, y, w, h);
+  } else if (im) {
     const k = Math.max(w / im.naturalWidth, h / im.naturalHeight);
     ctx.drawImage(im, x + (w - im.naturalWidth * k) / 2, y + (h - im.naturalHeight * k) / 2, im.naturalWidth * k, im.naturalHeight * k);
-  } else {
-    ctx.fillStyle = cr.color; ctx.globalAlpha = 0.22; ctx.fillRect(x, y, w, h); ctx.globalAlpha = 1;
-    drawCrewBust(id, x + w / 2, y + h * 0.68, h / 300, f);
-  }
+  } else drawCrewBust(id, x + w / 2, y + h * 0.68, h / 300, BUST_FACE[f] || f);
   ctx.restore();
   ctx.beginPath(); ctx.roundRect(x, y, w, h, o.r || 16); ctx.strokeStyle = C.ink; ctx.lineWidth = 4; ctx.stroke();
-  if (!im && h > 300) text('임시 그림 · 이미지 슬롯 3:2', x + w - 16, y + 24, 20, C.ink2, 'right');
+  if (!im && h > 300) text('임시 그림 · 이미지 슬롯', x + w - 16, y + 24, 20, C.ink2, 'right');
 }
 
 // ---- 버튼 ---------------------------------------------------------------------------------
@@ -687,11 +697,12 @@ const scenes = {
       const t = state.t;
       sunburst(360, 330, t, C.sun, '#ffc21f');
       checker(0, 1100, W, H, 60, C.mint, '#3fd6bb'); fillRect(0, 1094, W, 8, C.ink);
-      panel(70, 420, 580, 230, 36, C.white, C.paper);
-      drawBunny(360, 300 + Math.sin(t * 2.4) * 10, 3.2, Math.sin(t * 1.2) * 0.05);
-      textO('GOLDEN BUN', 360, 478, 46, C.cherry, C.ink, 9);
-      textO('골든번 이태원역점', 360, 548, 52, C.sun, C.ink, 10);
-      text('오늘부터 출근합니다', 360, 612, 24, C.ink2, 'center', true);
+      drawBunny(360, 236 + Math.sin(t * 2.4) * 10, 3, Math.sin(t * 1.2) * 0.05);
+      ctx.font = `176px "GB Title", ${FONT}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.lineJoin = 'round'; // 제목만 제목용 폰트
+      ctx.strokeStyle = C.ink; ctx.lineWidth = 18; ctx.fillStyle = C.ink; ctx.strokeText('골든번', 360, 482); ctx.fillText('골든번', 360, 482); // 그림자
+      ctx.strokeText('골든번', 360, 470); ctx.fillStyle = C.cherry; ctx.fillText('골든번', 360, 470);
+      ctx.font = `44px "GB Title", ${FONT}`; ctx.strokeStyle = C.ink; ctx.lineWidth = 10; ctx.strokeText('GOLDEN BUN', 360, 600); ctx.fillStyle = C.white; ctx.fillText('GOLDEN BUN', 360, 600);
+      text('오늘부터 출근합니다', 360, 656, 24, C.ink, 'center', true);
       text('이름', 360, 716, 24, C.ink, 'center', true);
       labelBtn('start', 150, 850, 420, 104, '새 게임', C.cherry, C.cherryD, 40);
       if (loadSave()) labelBtn('continue', 150, 980, 420, 90, '이어하기', C.white, C.steel, 32, false);
@@ -854,7 +865,7 @@ const scenes = {
       if (t > 1.5) {
         const p = easeBack((t - 1.5) / 0.3), oy = (1 - p) * 40; ctx.globalAlpha = clamp(p, 0, 1);
         panel(30, 884 + oy, 660, 180, 28, C.white, C.paper);
-        drawPortrait(s.partner, s.after > s.before ? 'smile' : 'neutral', 46, 900 + oy, 222, 148, null, { shadow: 0, r: 14 });
+        drawPortrait(s.partner, GRADES.indexOf(s.grade) >= 3 ? 'happy' : GRADES.indexOf(s.grade) <= 0 ? 'flustered' : 'smile', 46, 900 + oy, 222, 148, null, { shadow: 0, r: 14 });
         textO(`${cr.name} 호감도 +${s.gain}`, 478, 926 + oy, 28, C.pink, C.ink, 6);
         text(s.after !== s.before ? `${R[s.before].e} → ${R[s.after].e} ${R[s.after].label}` : `${R[s.after].e} ${R[s.after].label}`, 478, 972 + oy, 26, C.ink, 'center', true);
         text(GRADES.indexOf(s.grade) >= 3 ? '평가 A 이상! 추가 장면이 열려요' : '평가 A 이상이면 추가 장면이 열려요', 478, 1012 + oy, 20, C.ink2);
@@ -1115,7 +1126,7 @@ function drawPlay() {
     if (!o) return;
     const fr = o.pat / o.patMax, mood = fr > 0.6 ? 'happy' : fr > 0.28 ? 'ok' : 'angry', e = o.enter, a = clamp(e * 1.5, 0, 1);
     const x = 96 + i * 176 + (mood === 'angry' ? Math.sin(t * 34) * 2 : 0), bob = Math.sin(t * 2.2 + i * 1.7) * 2;
-    if (o.delivery) { const ry = (1 - easeBack(e)) * 60 + bob; drawPortrait(d.rider, fr > 0.28 ? 'neutral' : 'surprised', x - 52, 344 + ry, 104, 96, null, { shadow: 3, r: 14 }); drawItem('bag', x + 40, 436 + ry, 0.6); }
+    if (o.delivery) { const ry = (1 - easeBack(e)) * 60 + bob; drawPortrait(d.rider, fr > 0.28 ? 'work' : 'flustered', x - 52, 344 + ry, 104, 96, null, { shadow: 3, r: 14 }); drawItem('bag', x + 40, 436 + ry, 0.6); }
     else drawCustomer(o.look, x, 498 + (1 - easeOut(e)) * 110 + bob, mood, 0.86);
     const ty = 172 + (1 - easeBack(e)) * -70;
     ctx.globalAlpha = a;
@@ -1151,7 +1162,7 @@ function drawPlay() {
   // 파트너
   fillRect(0, 642, W, 110, C.white); fillRect(0, 642, W, 4, '#dfe6ec');
   zone('help', 8, 646, 312, 102);
-  drawPortrait(d.partner, peak ? 'surprised' : d.bubble.t > 0 ? 'smile' : 'neutral', 14, 652, 96, 90, null, { shadow: 3, r: 14 });
+  drawPortrait(d.partner, d.shake > 0 ? 'annoyed' : peak ? 'flustered' : d.bubble.t > 0 ? 'happy' : 'work', 14, 652, 96, 90, null, { shadow: 3, r: 14 });
   text(`${cr.name}  ${relOf(d.partner).e}`, 124, 666, 24, C.ink, 'left', true);
   text(d.ptask ? `${JOB_NAMES[d.ptask.id]} 준비 중` : cr.station.split(' · ')[0], 124, 694, 20, C.ink2, 'left');
   if (d.help >= 1) { // 다 찬 도움 게이지는 버튼이 된다
@@ -1295,7 +1306,7 @@ window.game = {
   },
 };
 
-if (document.fonts && document.fonts.load) document.fonts.load('20px Jua').catch(() => {}); // 전용 폰트를 미리 불러 둔다
+if (document.fonts && document.fonts.load) { document.fonts.load('20px Jua').catch(() => {}); document.fonts.load('20px "GB Title"', '골든번').catch(() => {}); } // 전용 폰트를 미리 불러 둔다
 reset();
 scene = params.get('scene') || 'title';
 lastScene = scene;

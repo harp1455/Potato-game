@@ -22,3 +22,16 @@
   licence: {id: OFL-1.1}
   date: 2026-11-26
   ships: true
+- path: assets/fonts/BlackHanSans-title.woff2
+  origin: licensed
+  tool: "fontTools subset: 제목에 쓰는 글자(골든번, GOLDEN BUN)만 남겨 woff2로 변환"
+  source: {vendor: "Zess Type (The Black Han Sans Project Authors)", product: "Black Han Sans (검은고딕)", url: "https://github.com/google/fonts/tree/main/ofl/blackhansans"}
+  licence: {id: OFL-1.1}
+  date: 2026-11-26
+  ships: true
+- path: assets/fonts/OFL-BlackHanSans.txt
+  origin: licensed
+  source: {vendor: "Zess Type (The Black Han Sans Project Authors)", product: "Black Han Sans 라이선스 전문", url: "https://github.com/google/fonts/tree/main/ofl/blackhansans"}
+  licence: {id: OFL-1.1}
+  date: 2026-11-26
+  ships: true

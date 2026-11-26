@@ -143,7 +143,9 @@ window.CONFIG = {
 
 // 스탠딩과 CG 이미지 슬롯. 파일을 assets/crew/ 에 넣고 여기에 경로를 적으면 그려 둔 임시 그림 대신 표시된다.
 // 권장: 가로 3:2 (예: 1216x832), 배경은 흰색 또는 투명. 표정 키: neutral, smile, shy, surprised.
-// 표정 파일이 없으면 neutral 을 쓴다. 예) seongdo: { neutral: 'assets/crew/seongdo.webp', smile: 'assets/crew/seongdo_smile.webp' }
+// 표정 키는 neutral, smile, shy, surprised, flustered, happy, work, annoyed, angry, tears, scorn 까지 쓸 수 있고, 없는 표정은 가까운 표정이나 neutral 로 대신한다.
+// 배경을 지운 스탠딩은 face 에 얼굴 위치 [가운데 x, 가운데 y, 크기] (0~1) 를 적으면 작은 칸에서 얼굴을 당겨 보여 준다.
+// (이전 설명) 표정 파일이 없으면 neutral 을 쓴다. 예) seongdo: { neutral: 'assets/crew/seongdo.webp', smile: 'assets/crew/seongdo_smile.webp' }
 window.ART = {
   crew: {
     seongdo: {},
@@ -153,6 +155,7 @@ window.ART = {
     daeheon: {},
     taebeom: {},
   },
+  face: {},
   // 이벤트 CG: 이벤트 id(story.js) -> 파일. 있으면 그 이벤트 동안 스탠딩 자리에 표시된다.
   cg: {},
 };
