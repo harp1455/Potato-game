@@ -2,3 +2,4 @@ iteration 1	버거 조립 팝업(피클, 소스, 피클 빼기 주문)과 콘 3�
 iteration 2	난이도 완화(손님 간격과 인내심, 콘 판정, 감자튀김 타는 시간, 레시피 표시 기간), 파트너 도움 게이지 추가, 전용 한글 폰트와 부드러운 패널·배경·HUD로 UI 정리	errors: none	evidence/iteration-2-play.png evidence/iteration-2-pick.png evidence/iteration-2-event.png evidence/iteration-2-burger.png
 iteration 3	시즌 메뉴(2주차부터), 라이더 2명은 파트너에서 빼고 날마다 배달로 등장, 근무 중 잡담, 마감 후 선택 화면과 퇴근 후 약속(30개 장면), 그라데이션과 보라색 제거	errors: none	evidence/iteration-3-pick.png evidence/iteration-3-after.png evidence/iteration-3-request.png evidence/iteration-3-season.png evidence/iteration-3-delivery.png evidence/iteration-3-chat.png
 iteration 4	시작 화면 제목을 골든번만 크게, 제목용 폰트(검은고딕)로 변경. 배경을 지운 스탠딩을 위한 칸 처리(전신, 얼굴 당김)와 표정 11종 지원. 스탠딩 이미지는 플레이 링크에만 넣음	errors: none	evidence/iteration-4-title.png evidence/iteration-4-play.png
+iteration 5	스탠딩 이미지를 시작할 때 미리 불러오고, 불러오는 동안 임시 그림이 비치지 않게 함	errors: none	evidence/iteration-5-play.png

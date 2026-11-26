@@ -626,10 +626,10 @@ function drawPortrait(id, f, x, y, w, h, cgId, o = {}) {
   } else if (im) {
     const k = Math.max(w / im.naturalWidth, h / im.naturalHeight);
     ctx.drawImage(im, x + (w - im.naturalWidth * k) / 2, y + (h - im.naturalHeight * k) / 2, im.naturalWidth * k, im.naturalHeight * k);
-  } else drawCrewBust(id, x + w / 2, y + h * 0.68, h / 300, BUST_FACE[f] || f);
+  } else if (!key && !cg) drawCrewBust(id, x + w / 2, y + h * 0.68, h / 300, BUST_FACE[f] || f); // 스탠딩이 있는 크루는 불러오는 동안 빈 칸으로 둔다 (임시 그림이 먼저 비치지 않게)
   ctx.restore();
   ctx.beginPath(); ctx.roundRect(x, y, w, h, o.r || 16); ctx.strokeStyle = C.ink; ctx.lineWidth = 4; ctx.stroke();
-  if (!im && h > 300) text('임시 그림 · 이미지 슬롯', x + w - 16, y + 24, 20, C.ink2, 'right');
+  if (!im && !key && h > 300) text('임시 그림 · 이미지 슬롯', x + w - 16, y + 24, 20, C.ink2, 'right');
 }
 
 // ---- 버튼 ---------------------------------------------------------------------------------
@@ -1307,6 +1307,10 @@ window.game = {
 };
 
 if (document.fonts && document.fonts.load) { document.fonts.load('20px Jua').catch(() => {}); document.fonts.load('20px "GB Title"', '골든번').catch(() => {}); } // 전용 폰트를 미리 불러 둔다
+if (window.ART) { // 스탠딩과 CG를 시작할 때 미리 불러 둔다
+  for (const id in ART.crew) for (const k in ART.crew[id]) getImg(ART.crew[id][k]);
+  for (const k in ART.cg) getImg(ART.cg[k]);
+}
 reset();
 scene = params.get('scene') || 'title';
 lastScene = scene;
