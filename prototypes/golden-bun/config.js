@@ -19,8 +19,9 @@ window.CONFIG = {
 
   // ---- 메뉴가 열리는 날 (첫 출근부터 센 일수) ----
   dayCone: { value: 2, min: 1, max: 30, step: 1 },           // 아이스크림 콘
-  dayDouble: { value: 3, min: 1, max: 30, step: 1 },         // 더블치즈번, 치즈, 케첩
-  dayDelivery: { value: 4, min: 1, max: 30, step: 1 },       // 배달 주문 (라이더와 근무하면 첫날부터)
+  dayDouble: { value: 4, min: 1, max: 30, step: 1 },         // 더블치즈번, 치즈, 케첩
+  dayDelivery: { value: 3, min: 1, max: 30, step: 1 },       // 배달 주문 (라이더와 근무하면 첫날부터)
+  seasonWeek: { value: 2, min: 1, max: 20, step: 1 },         // 시즌 메뉴가 시작되는 주
   dayCustom: { value: 5, min: 1, max: 30, step: 1 },         // '피클 빼기' 주문
   recipeHintDays: { value: 5, min: 0, max: 30, step: 1 },    // 이 날까지는 조립대에 레시피가 계속 보인다
   recipePeek: { value: 2.5, min: 0.5, max: 8, step: 0.5 },   // 그 뒤 '레시피 보기'를 누르면 보이는 시간 (초)
@@ -49,7 +50,13 @@ window.CONFIG = {
   wBurgerCone: { value: 1, min: 0, max: 10, step: 1 },       // 버거 + 콘
   wDouble: { value: 2, min: 0, max: 10, step: 1 },           // 더블치즈번 단품
   wDoubleSet: { value: 2, min: 0, max: 10, step: 1 },        // 더블치즈번 세트
-  // 배달
+  wSeason: { value: 3, min: 0, max: 10, step: 1 },           // 시즌 메뉴 단품
+  wSeasonSet: { value: 2, min: 0, max: 10, step: 1 },        // 시즌 메뉴 세트
+  // 배달 (라이더 두 명이 날마다 번갈아 맡는다)
+  riderPayMul: { value: 1.3, min: 1, max: 3, step: 0.1 },    // 대헌이 맡은 날의 배달비 배율
+  riderPatienceMul: { value: 1.3, min: 1, max: 3, step: 0.1 },// 태범이 맡은 날의 배달 인내심 배율
+  riderAffPer: { value: 2, min: 1, max: 10, step: 1 },       // 배달 이만큼마다 그날 라이더 호감도 +1
+  riderAffMax: { value: 3, min: 0, max: 10, step: 1 },       // 하루에 배달로 오르는 라이더 호감도 한계
   deliveryRate: { value: 0.12, min: 0, max: 0.8, step: 0.02 },// 주문이 배달일 확률
   deliveryPatience: { value: 1.4, min: 1, max: 3, step: 0.1 },// 배달 주문의 인내심 배율
   deliveryFee: { value: 1500, min: 0, max: 5000, step: 100 }, // 배달 1건의 추가 매출 (원)
@@ -91,6 +98,7 @@ window.CONFIG = {
   priceDouble: { value: 7500, min: 1000, max: 15000, step: 100 },
   priceFries: { value: 2500, min: 500, max: 8000, step: 100 },
   priceDrink: { value: 2000, min: 500, max: 8000, step: 100 },
+  priceSeason: { value: 6900, min: 1000, max: 15000, step: 100 },
   priceCone: { value: 1000, min: 500, max: 5000, step: 100 },
   setDiscount: { value: 1500, min: 0, max: 5000, step: 100 }, // 세트 할인
   tipFast: { value: 500, min: 0, max: 3000, step: 100 },      // 빠른 제공 팁
@@ -117,6 +125,14 @@ window.CONFIG = {
   affA: { value: 2, min: 0, max: 10, step: 1 },
   affB: { value: 1, min: 0, max: 10, step: 1 },
   affDaily: { value: 1, min: 0, max: 5, step: 1 },            // 일상 장면 한 번
+  // 근무 중 잡담과 퇴근 후 약속
+  chatAt: { value: 80, min: 10, max: 200, step: 5 },          // 파트너가 말을 거는 시각 (근무 시작 뒤 초, 한산할 때만)
+  chatTime: { value: 12, min: 4, max: 30, step: 1 },          // 대답을 기다려 주는 시간 (초)
+  affDate: { value: 3, min: 0, max: 10, step: 1 },            // 처음 가 본 약속 한 번
+  affDateAgain: { value: 1, min: 0, max: 10, step: 1 },       // 이미 가 본 약속 한 번
+  dateChance: { value: 0.4, min: 0, max: 1, step: 0.05 },     // 신뢰 이상인 크루가 퇴근 후 먼저 청할 확률
+  dateStaMeal: { value: 1, min: -3, max: 3, step: 1 },        // 같이 밥을 먹으면 체력
+  dateStaDrink: { value: -1, min: -3, max: 3, step: 1 },      // 술을 마시면 체력
   rel1: { value: 8, min: 1, max: 50, step: 1 },               // 신뢰
   rel2: { value: 20, min: 2, max: 80, step: 1 },              // 친근함
   rel3: { value: 36, min: 3, max: 150, step: 1 },             // 호감

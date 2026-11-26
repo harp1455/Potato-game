@@ -5,11 +5,11 @@
 'use strict';
 
 const C = {
-  ink: '#2a2146', ink2: '#5d5486', white: '#ffffff', paper: '#fff9ec',
+  ink: '#22303f', ink2: '#5c6b7a', white: '#ffffff', paper: '#fff9ec',
   sun: '#ffd23f', sunD: '#f7a400', cherry: '#ff4f64', cherryD: '#d42c4a',
   mint: '#27cdb0', mintD: '#0e9f8a', sky: '#9be4ff', skyD: '#4fb8f0',
-  pink: '#ff8db8', grape: '#8266ff', wood: '#f7a55a', woodD: '#cf7430',
-  steel: '#e3eaf7', steelD: '#aebad6', gray: '#b8b3cc', green: '#3ccf74',
+  pink: '#ff8db8', grape: '#2f9bd6', wood: '#f7a55a', woodD: '#cf7430',
+  steel: '#e6edf3', steelD: '#b3c1cf', gray: '#b6c0ca', green: '#3ccf74',
   bun: '#f2a640', bunL: '#ffd27a', patty: '#7a4226', cheese: '#ffd84a',
   pickle: '#7cc242', gold: '#ffb300', ketchup: '#e8323c', skin: '#f6c19c',
 };
@@ -61,7 +61,7 @@ function poly(pts, fill, stroke = C.ink, lw = 4, close = true) {
 function line(x1, y1, x2, y2, c = C.ink, lw = 4) { poly([x1, y1, x2, y2], null, c, lw, false); }
 function won(n) { return '₩' + Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ','); }
 function at(x, y, s, fn, rot = 0) { ctx.save(); ctx.translate(x, y); if (rot) ctx.rotate(rot); ctx.scale(s, s); fn(); ctx.restore(); }
-function vgrad(y0, y1, c1, c2) { const g = ctx.createLinearGradient(0, y0, 0, y1); g.addColorStop(0, c1); g.addColorStop(1, c2); return g; }
+function vgrad(y0, y1, c1) { return c1; } // 그라데이션은 쓰지 않는다: 언제나 한 가지 색
 function fillRect(x, y, w, h, c) { ctx.fillStyle = c; ctx.fillRect(x, y, w, h); }
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const easeOut = t => 1 - Math.pow(1 - clamp(t, 0, 1), 3);
@@ -80,22 +80,19 @@ function luma(c) {
 }
 // 패널: 번지는 그림자, 세로 그라데이션, 아랫단 입체감, 윗면 광택, 같은 색 계열의 가는 테두리
 function panel(x, y, w, h, r, c1, c2 = c1, o = {}) {
-  const sh = o.shadow === undefined ? 6 : o.shadow, light = luma(c2) > 0.86;
-  const edge = o.stroke || (light ? '#b3a9e2' : shade(c2, -0.42));
+  const sh = o.shadow === undefined ? 6 : o.shadow, light = luma(c1) > 0.86;
+  const edge = o.stroke || (light ? '#c5d0db' : shade(c1, -0.42));
   if (sh) {
-    ctx.fillStyle = 'rgba(38,28,80,0.09)';
+    ctx.fillStyle = 'rgba(26,38,52,0.09)';
     ctx.beginPath(); ctx.roundRect(x - 2, y + sh, w + 4, h + 2, r + 2); ctx.fill();
     ctx.beginPath(); ctx.roundRect(x - 1, y + sh * 0.6, w + 2, h + 1, r + 1); ctx.fill();
-    ctx.fillStyle = 'rgba(38,28,80,0.14)'; ctx.beginPath(); ctx.roundRect(x, y + sh * 0.45, w, h, r); ctx.fill();
+    ctx.fillStyle = 'rgba(26,38,52,0.14)'; ctx.beginPath(); ctx.roundRect(x, y + sh * 0.45, w, h, r); ctx.fill();
   }
   ctx.beginPath(); ctx.roundRect(x, y, w, h, r); ctx.fillStyle = vgrad(y, y + h, c1, c2); ctx.fill();
-  ctx.save(); ctx.clip();
-  if (o.lip !== false && h >= 44) { ctx.fillStyle = light ? 'rgba(120,105,200,0.13)' : 'rgba(0,0,0,0.15)'; ctx.fillRect(x, y + h - Math.min(8, h * 0.1), w, 10); }
-  if (o.gloss !== false && !light) { ctx.fillStyle = 'rgba(255,255,255,0.24)'; ctx.beginPath(); ctx.roundRect(x + 5, y + 4, w - 10, Math.min(h * 0.42, 56), Math.max(2, r - 5)); ctx.fill(); }
-  ctx.restore();
+  if (o.lip !== false && h >= 44) { ctx.save(); ctx.clip(); ctx.fillStyle = light ? 'rgba(34,48,63,0.07)' : 'rgba(0,0,0,0.14)'; ctx.fillRect(x, y + h - Math.min(8, h * 0.1), w, 10); ctx.restore(); }
   ctx.beginPath(); ctx.roundRect(x, y, w, h, r); ctx.strokeStyle = edge; ctx.lineWidth = o.lw || 3; ctx.stroke();
 }
-function bar(x, y, w, h, frac, c, back = '#d9d3ea') { // 진행 막대
+function bar(x, y, w, h, frac, c, back = '#dde4ea') { // 진행 막대
   rr(x, y, w, h, h / 2, back, C.ink, 3);
   const f = clamp(frac, 0, 1);
   if (f > 0.02) rr(x + 3, y + 3, Math.max(h - 6, (w - 6) * f), h - 6, (h - 6) / 2, c, null);
@@ -107,7 +104,7 @@ function drawBunny(x, y, s, rot = 0) { // 번 모양 토끼 '버니'
     ell(-14, -34, 9, 24, C.paper); ell(14, -34, 9, 24, C.paper);
     ell(-14, -32, 4, 14, C.pink, null); ell(14, -32, 4, 14, C.pink, null);
     ctx.beginPath(); ctx.moveTo(-40, 14); ctx.quadraticCurveTo(-40, -26, 0, -26); ctx.quadraticCurveTo(40, -26, 40, 14);
-    ctx.closePath(); ctx.fillStyle = vgrad(-26, 14, C.bunL, C.bun); ctx.fill(); ctx.strokeStyle = C.ink; ctx.lineWidth = 4; ctx.stroke();
+    ctx.closePath(); ctx.fillStyle = C.bun; ctx.fill(); ctx.strokeStyle = C.ink; ctx.lineWidth = 4; ctx.stroke();
     rr(-40, 14, 80, 14, 6, C.bunL);
     ell(-12, -2, 3.5, 4.5, C.ink, null); ell(12, -2, 3.5, 4.5, C.ink, null);
     ell(-21, 5, 5, 3, C.pink, null); ell(21, 5, 5, 3, C.pink, null);
@@ -117,7 +114,7 @@ function drawBunny(x, y, s, rot = 0) { // 번 모양 토끼 '버니'
 }
 function bunTop(y, w) {
   ctx.beginPath(); ctx.moveTo(-w, y); ctx.quadraticCurveTo(-w, y - w * 0.8, 0, y - w * 0.8); ctx.quadraticCurveTo(w, y - w * 0.8, w, y);
-  ctx.closePath(); ctx.fillStyle = vgrad(y - w * 0.8, y, C.bunL, C.bun); ctx.fill(); ctx.strokeStyle = C.ink; ctx.lineWidth = 4; ctx.stroke();
+  ctx.closePath(); ctx.fillStyle = C.bun; ctx.fill(); ctx.strokeStyle = C.ink; ctx.lineWidth = 4; ctx.stroke();
   ell(-w * 0.4, y - w * 0.45, 4, 2, C.paper, null); ell(w * 0.1, y - w * 0.6, 4, 2, C.paper, null); ell(w * 0.5, y - w * 0.35, 4, 2, C.paper, null);
 }
 function bottle(c, label) { // 소스 통
@@ -167,6 +164,21 @@ function drawItem(id, x, y, s) { // 음식과 재료, 기준 크기 약 80px
     } else if (id === 'trash') {
       poly([-22, -14, 22, -14, 16, 32, -16, 32], C.steelD); rr(-28, -24, 56, 10, 4, C.steelD); rr(-8, -32, 16, 8, 3, C.steelD);
       line(-8, -4, -6, 24, C.ink, 3); line(8, -4, 6, 24, C.ink, 3);
+    } else if (id === 'season') { // 이번 주 시즌 메뉴: 재료에 따라 속이 달라지고 위에 깃발이 꽂힌다
+      const k = curSeason ? curSeason.special : 'chicken'; let yy = 32;
+      rr(-34, yy - 12, 68, 14, 6, C.bunL); yy -= 12;
+      if (k === 'chicken') { rr(-38, yy - 18, 76, 18, 8, '#e39a2e'); for (let i = -2; i <= 2; i++) ell(i * 15, yy - 18, 7, 4, '#f3b54a', null); yy -= 18; }
+      else if (k === 'egg') { ell(0, yy - 7, 38, 9, C.white); ell(4, yy - 9, 11, 6, C.sun, C.ink, 3); yy -= 12; }
+      else { rr(-36, yy - 12, 72, 12, 5, C.patty); yy -= 12; if (k === 'bulgogi') { rr(-34, yy - 6, 68, 7, 3, '#7a3b1e', C.ink, 3); yy -= 6; } else { for (let i = -1; i <= 1; i++) ell(i * 22, yy - 3, 10, 5, '#3f9d3a', C.ink, 3); yy -= 6; } }
+      poly([-38, yy, 38, yy, 30, yy - 7, -30, yy - 7], C.cheese); yy -= 7;
+      bunTop(yy, 36);
+      line(0, yy - 30, 0, yy - 56, C.ink, 3); poly([0, yy - 56, 22, yy - 49, 0, yy - 42], C.cherry, C.ink, 3);
+    } else if (id === 'special') { // 시즌 재료
+      const k = curSeason ? curSeason.special : 'chicken';
+      if (k === 'chicken') { ell(0, 4, 36, 20, '#e39a2e'); for (let i = -2; i <= 2; i++) ell(i * 14, -6 + Math.abs(i) * 3, 7, 5, '#f3b54a', null); }
+      else if (k === 'bulgogi') bottle('#7a3b1e', '#4f2410');
+      else if (k === 'egg') { ell(0, 4, 34, 24, C.white); ell(6, 0, 13, 12, C.sun, C.ink, 3); }
+      else { ell(-12, 0, 17, 13, '#3f9d3a'); ell(14, 8, 15, 11, '#3f9d3a'); ell(-12, 0, 7, 5, '#a8dd6f', null); ell(14, 8, 6, 4, '#a8dd6f', null); }
     } else if (id === 'bag') { // 배달 가방
       rr(-34, -30, 68, 64, 10, C.mint); rr(-34, -30, 68, 18, 8, C.mintD);
       rr(-12, -40, 24, 14, 6, null, C.ink, 4);
@@ -180,7 +192,7 @@ function drawStar(x, y, r, fill = C.sun, rot = 0) {
   poly(p, fill, C.ink, Math.max(2, r * 0.12));
 }
 function drawBolt(x, y, s, on) { // 체력 한 칸
-  at(x, y, s, () => poly([4, -16, -10, 2, -1, 2, -5, 16, 10, -3, 1, -3], on ? C.sun : '#9d91e6', on ? '#a86a00' : '#6a5cc0', 2.5));
+  at(x, y, s, () => poly([4, -16, -10, 2, -1, 2, -5, 16, 10, -3, 1, -3], on ? C.sun : '#d93a50', on ? '#a86a00' : '#b32a40', 2.5));
 }
 function drawCoin(x, y, r) { ell(x, y, r, r, C.sun, C.ink, Math.max(2, r * 0.2)); ell(x, y, r * 0.55, r * 0.55, null, C.sunD, Math.max(1.5, r * 0.16)); }
 function drawHeart(x, y, s, c = C.pink) {
@@ -223,13 +235,13 @@ function drawCustomer(kind, x, y, mood, s = 1) { // 발밑이 (x, y), 카운터�
     } else if (kind === 2) { // 할머니: 올림머리와 안경
       ell(0, -40, 64, 58, C.grape);
       ell(0, -112, 40, 36, C.skin);
-      ell(0, -150, 22, 18, '#e9e6f5');
-      ctx.beginPath(); ctx.arc(0, -118, 41, Math.PI * 1.08, Math.PI * 1.92); ctx.strokeStyle = '#e9e6f5'; ctx.lineWidth = 14; ctx.stroke();
+      ell(0, -150, 22, 18, '#eef1f4');
+      ctx.beginPath(); ctx.arc(0, -118, 41, Math.PI * 1.08, Math.PI * 1.92); ctx.strokeStyle = '#eef1f4'; ctx.lineWidth = 14; ctx.stroke();
       ctx.beginPath(); ctx.arc(0, -118, 47, Math.PI * 1.08, Math.PI * 1.92); ctx.strokeStyle = C.ink; ctx.lineWidth = 4; ctx.stroke();
       ell(-12, -110, 11, 9, null, C.ink, 3); ell(12, -110, 11, 9, null, C.ink, 3);
       face(mood, -110, -90);
     } else if (kind === 3) { // 클러버: 뾰족한 머리와 선글라스
-      poly([-56, 14, -50, -100, 50, -100, 56, 14], '#35305a'); poly([-14, -100, 0, -60, 14, -100], C.mint);
+      poly([-56, 14, -50, -100, 50, -100, 56, 14], '#2c3a4a'); poly([-14, -100, 0, -60, 14, -100], C.mint);
       rr(-30, -176, 60, 80, 24, '#e2a273');
       poly([-30, -160, -24, -206, -10, -180, 0, -214, 10, -180, 24, -206, 30, -160], C.pink);
       rr(-28, -146, 56, 16, 6, C.ink);
@@ -249,13 +261,13 @@ function drawCustomer(kind, x, y, mood, s = 1) { // 발밑이 (x, y), 카운터�
 
 // ---- 크루 임시 스탠딩 (NAI 이미지가 들어오기 전까지) ------------------------------------------
 const CREW_LOOK = {
-  seongdo: { sw: 128, hw: 60, hair: '#1d1b26', eye: '#d92b3a', brow: 5, top: 'uniform', smiley: true,
+  seongdo: { sw: 128, hw: 60, hair: '#1b1e24', eye: '#d92b3a', brow: 5, top: 'uniform', smiley: true,
     hairPts: [-64, -80, -66, -124, -44, -152, 0, -160, 46, -152, 66, -124, 64, -80, 48, -110, 8, -126, -28, -116] },
-  minjun: { sw: 150, hw: 66, hair: '#1d1b26', eye: '#1d1b26', brow: 7, top: 'uniform', flat: true,
+  minjun: { sw: 150, hw: 66, hair: '#1b1e24', eye: '#1b1e24', brow: 7, top: 'uniform', flat: true,
     hairPts: [-70, -84, -74, -128, -52, -168, -34, -148, -16, -182, 2, -150, 22, -184, 36, -150, 56, -170, 74, -126, 70, -84, 50, -112, 10, -122, -30, -116] },
-  gwangsik: { sw: 136, hw: 62, hair: '#2a2833', eye: '#e3a917', brow: 6, top: 'uniform', flat: true, streak: true, aged: true,
+  gwangsik: { sw: 136, hw: 62, hair: '#2a2d33', eye: '#e3a917', brow: 6, top: 'uniform', flat: true, streak: true, aged: true,
     hairPts: [-66, -84, -68, -128, -42, -158, 10, -168, 54, -152, 70, -118, 66, -84, 56, -118, 22, -138, -30, -132, -54, -110] },
-  gwancheol: { sw: 152, hw: 66, hair: '#211f2b', eye: '#4a3324', brow: 6, top: 'uniform', smiley: true, aged: true,
+  gwancheol: { sw: 152, hw: 66, hair: '#20232a', eye: '#4a3324', brow: 6, top: 'uniform', smiley: true, aged: true,
     hairPts: [-70, -88, -72, -128, -48, -156, 0, -164, 48, -156, 72, -128, 70, -88, 58, -120, 0, -132, -58, -120] },
   daeheon: { sw: 146, hw: 62, hair: '#d2362f', eye: '#4a3324', brow: 6, top: 'jacket', sharp: true, skin: '#eab084',
     hairPts: [-68, -84, -72, -130, -50, -166, -10, -180, 30, -172, 62, -150, 74, -112, 68, -84, 58, -110, 42, -96, 30, -124, -6, -136, -42, -120] },
@@ -270,8 +282,8 @@ function drawCrewBust(id, cx, cy, s, f = 'neutral') {
       poly(sh, C.sun); poly([-44, 34, 0, 78, 44, 34, 30, 28, 0, 54, -30, 28], C.cherry);
       rr(46, 84, 54, 26, 6, C.white, C.ink, 3); ell(58, 97, 5, 5, C.bun, null);
     } else if (L.top === 'jacket') { // 검은 나시 위에 가죽 재킷
-      poly(sh, sk); poly([-46, 150, -40, 50, 0, 80, 40, 50, 46, 150], '#26242e');
-      poly([-sw, 150, -sw + 14, 62, -44, 34, -34, 150], '#3b3848'); poly([sw, 150, sw - 14, 62, 44, 34, 34, 150], '#3b3848');
+      poly(sh, sk); poly([-46, 150, -40, 50, 0, 80, 40, 50, 46, 150], '#24282e');
+      poly([-sw, 150, -sw + 14, 62, -44, 34, -34, 150], '#3a4048'); poly([sw, 150, sw - 14, 62, 44, 34, 34, 150], '#3a4048');
       line(-40, 60, -36, 150, C.steelD, 3); line(40, 60, 36, 150, C.steelD, 3);
     } else { // 흰 나시
       poly(sh, sk); poly([-56, 150, -42, 50, -24, 42, 0, 72, 24, 42, 42, 50, 56, 150], C.white);
@@ -285,7 +297,7 @@ function drawCrewBust(id, cx, cy, s, f = 'neutral') {
       ctx.fillStyle = 'rgba(111,70,40,0.45)'; ctx.beginPath(); ctx.ellipse(0, 4, hw + 4, 46, 0, 0, Math.PI * 2); ctx.fill(); ctx.restore();
     }
     poly(L.hairPts, L.hair);
-    if (L.streak) { line(-30, -150, -8, -134, '#c9c6d6', 4); line(8, -160, 30, -140, '#c9c6d6', 4); }
+    if (L.streak) { line(-30, -150, -8, -134, '#cfd4da', 4); line(8, -160, 30, -140, '#cfd4da', 4); }
     // 눈썹
     const by = f === 'surprised' ? -98 : -88, tilt = L.sharp || L.flat ? 2 : -3;
     line(-44, by - (L.sharp ? 4 : 0), -15, by + tilt, C.ink, L.brow); line(44, by - (L.sharp ? 4 : 0), 15, by + tilt, C.ink, L.brow);
@@ -318,10 +330,10 @@ const SKY = {
   morning: { top: '#bfeaff', bot: '#fff3c9', wall: '#fff8e6', wall2: '#fff1d0', city: '#9fd0e8', glow: 'rgba(255,255,255,0)' },
   day: { top: '#6fd0ff', bot: '#c9f1ff', wall: '#f4fffb', wall2: '#e3f9f2', city: '#7fbfe6', glow: 'rgba(255,255,255,0)' },
   sunset: { top: '#ff8f6b', bot: '#ffd08a', wall: '#fff3e8', wall2: '#ffe6d6', city: '#c65f6e', glow: 'rgba(255,120,80,0.10)' },
-  night: { top: '#231b52', bot: '#5a3f9e', wall: '#eee9ff', wall2: '#e0d8fb', city: '#16113a', glow: 'rgba(90,60,200,0.16)' },
+  night: { top: '#14294a', bot: '#1f3a63', wall: '#eef4fa', wall2: '#e1ebf5', city: '#0b1730', glow: 'rgba(30,70,150,0.10)' },
 };
 function checker(x0, y0, x1, y1, size, c1, c2) { // 잔잔한 물방울 무늬 바탕
-  ctx.fillStyle = vgrad(y0, y1, c1, shade(c1, -0.04)); ctx.fillRect(x0, y0, x1 - x0, y1 - y0);
+  fillRect(x0, y0, x1 - x0, y1 - y0, c1);
   ctx.save(); ctx.beginPath(); ctx.rect(x0, y0, x1 - x0, y1 - y0); ctx.clip(); ctx.fillStyle = c2;
   const r = size * 0.13;
   for (let y = y0, row = 0; y < y1 + size; y += size * 0.5, row++) for (let x = x0 + (row % 2 ? size * 0.5 : 0); x < x1 + size; x += size) { ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fill(); }
@@ -352,8 +364,8 @@ function drawStore(skyKey, y0, y1, t, peak) { // 매장 벽, 창밖, 간판 아�
 }
 function drawLoc(loc, t) { // 이벤트 배경
   const L = {
-    crewroom: ['#dff3ff', '#bfe3f7'], alley: ['#3a3160', '#2d2550'], hall: ['#3c2f6b', '#2c2253'], grill: ['#e6ecf7', '#cdd6ea'],
-    freezer: ['#d9f4ff', '#b6e4f7'], eaves: ['#33405f', '#27314b'], counter: ['#fff3da', '#ffe2ad'], street: ['#2b2458', '#1e1942'],
+    crewroom: ['#dff3ff', '#cdeafb'], alley: ['#2b3a4d', '#243242'], hall: ['#2a3b52', '#233347'], grill: ['#e9eef3', '#dbe3ea'],
+    freezer: ['#d9f4ff', '#c4ebfb'], eaves: ['#33455c', '#2b3b50'], counter: ['#fff3da', '#ffe9be'], street: ['#1f2e45', '#1a273b'],
   }[loc] || ['#eee', '#ddd'];
   checker(0, 0, W, H, 60, L[0], L[1]);
   if (loc === 'crewroom') for (let i = 0; i < 5; i++) { panel(30 + i * 134, 60, 120, 540, 10, '#8fb7d9', '#6f9cc4', { shadow: 4 }); rr(52 + i * 134, 100, 76, 14, 4, C.ink, null); ell(132 + i * 134, 330, 6, 6, C.sun); }
@@ -361,14 +373,14 @@ function drawLoc(loc, t) { // 이벤트 배경
     panel(470, 40, 200, 150, 12, C.steel, C.steelD); for (let i = 0; i < 5; i++) line(492, 66 + i * 26, 648, 66 + i * 26, C.ink2, 4);
     panel(40, 400, 140, 210, 12, C.mint, C.mintD); ell(600, 300, 60, 60, 'rgba(255,210,63,0.18)', null); ell(600, 300, 16, 16, C.sun);
   }
-  if (loc === 'hall') { panel(40, 50, 640, 300, 14, '#221a4d', '#3c2f7a', { gloss: false }); ell(560, 130, 30, 30, '#fff1b0', null); for (let i = 0; i < 3; i++) { rr(60 + i * 220, 500, 160, 20, 6, C.wood); panel(90 + i * 220, 440, 100, 60, 10, C.cherry, C.cherryD, { shadow: 0 }); } }
-  if (loc === 'grill') { poly([60, 30, 660, 30, 600, 140, 120, 140], C.steelD); panel(60, 470, 600, 140, 12, '#6b7391', '#4b5270'); for (let i = 0; i < 6; i++) line(100 + i * 100, 492, 100 + i * 100, 590, C.ink, 6); }
+  if (loc === 'hall') { panel(40, 50, 640, 300, 14, '#16233a', '#16233a', { lip: false }); ell(560, 130, 30, 30, '#fff1b0', null); for (let i = 0; i < 3; i++) { rr(60 + i * 220, 500, 160, 20, 6, C.wood); panel(90 + i * 220, 440, 100, 60, 10, C.cherry, C.cherryD, { shadow: 0 }); } }
+  if (loc === 'grill') { poly([60, 30, 660, 30, 600, 140, 120, 140], C.steelD); panel(60, 470, 600, 140, 12, '#6b7f91', '#4b5a68'); for (let i = 0; i < 6; i++) line(100 + i * 100, 492, 100 + i * 100, 590, C.ink, 6); }
   if (loc === 'freezer') { for (let i = 0; i < 6; i++) panel(40 + (i % 3) * 220, 70 + Math.floor(i / 3) * 270, 190, 230, 10, '#e2b97d', '#c99a5b', { shadow: 4 }); for (let i = 0; i < 20; i++) ell(40 + (i * 97) % 640, 30 + (i * 53 + t * 20) % 600, 4, 4, C.white, null); }
   if (loc === 'eaves') { fillRect(0, 0, W, 70, '#1c2338'); for (let i = 0; i < 44; i++) { const x = (i * 61 + t * 40) % W, y = (i * 97 + t * 900) % 620 + 70; line(x, y, x - 6, y + 26, '#9fc8ef', 3); } }
   if (loc === 'counter') { panel(60, 440, 600, 170, 12, C.wood, C.woodD); panel(420, 330, 180, 130, 12, C.steel, C.steelD); rr(440, 350, 140, 60, 6, C.ink); text('₩', 510, 380, 34, C.mint, 'center', true); }
   if (loc === 'street') {
     for (let i = 0; i < 16; i++) fillRect(20 + (i * 139) % 680, 30 + (i * 71) % 360, 4, 4, 'rgba(255,255,255,0.8)');
-    for (let i = 0; i < 5; i++) { fillRect(i * 150, 380 - (i % 3) * 60, 130, 260, '#15102f'); ctx.fillStyle = C.sun; for (let k = 0; k < 6; k++) ctx.fillRect(i * 150 + 18 + (k % 3) * 36, 400 - (i % 3) * 60 + Math.floor(k / 3) * 50, 14, 20); }
+    for (let i = 0; i < 5; i++) { fillRect(i * 150, 380 - (i % 3) * 60, 130, 260, '#0f1a2b'); ctx.fillStyle = C.sun; for (let k = 0; k < 6; k++) ctx.fillRect(i * 150 + 18 + (k % 3) * 36, 400 - (i % 3) * 60 + Math.floor(k / 3) * 50, 14, 20); }
     panel(520, 250, 150, 60, 10, C.mint, C.mintD); text('BUS', 595, 281, 26, C.white, 'center', true); line(595, 310, 595, 600, C.steelD, 8);
   }
 }
