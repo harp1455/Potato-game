@@ -1,0 +1,42 @@
+# Where each file in assets/ and vendor/ came from, one entry per file. The field names are the
+# provenance record's, so the entries carry over when the game grows.
+# - path: assets/hit.wav      # relative to this game's folder
+#   origin: ai                # ai | bought | cc0 | you | outsourced | template | plugin | licensed | code | unknown
+#   tool: "what made or fetched it: the generator, or the script for code"
+#   model: "the model ID, when a model made it or an AI wrote its code"
+#   source: {vendor: "who made or sold it", product: "its name", url: "where from"}   # a download
+#   licence: {id: CC0-1.0}    # a download: the SPDX id where one exists
+#   date: 2026-01-31
+#   ships: true               # false for a file only the build uses
+#   placeholder: true         # until it is replaced; leave the line out otherwise
+- path: assets/fonts/Jua-Regular.woff2
+  origin: licensed
+  tool: "fontTools: Jua-Regular.ttf를 woff2로 변환"
+  source: {vendor: "Woowa Brothers (The Jua Project Authors)", product: "Jua (배달의민족 주아)", url: "https://github.com/google/fonts/tree/main/ofl/jua"}
+  licence: {id: OFL-1.1}
+  date: 2026-11-26
+  ships: true
+- path: assets/fonts/OFL.txt
+  origin: licensed
+  source: {vendor: "Woowa Brothers (The Jua Project Authors)", product: "Jua 라이선스 전문", url: "https://github.com/google/fonts/tree/main/ofl/jua"}
+  licence: {id: OFL-1.1}
+  date: 2026-11-26
+  ships: true
+- path: assets/fonts/BlackHanSans-title.woff2
+  origin: licensed
+  tool: "fontTools subset: 제목에 쓰는 글자(골든번, GOLDEN BUN)만 남겨 woff2로 변환"
+  source: {vendor: "Zess Type (The Black Han Sans Project Authors)", product: "Black Han Sans (검은고딕)", url: "https://github.com/google/fonts/tree/main/ofl/blackhansans"}
+  licence: {id: OFL-1.1}
+  date: 2026-11-26
+  ships: true
+- path: assets/fonts/OFL-BlackHanSans.txt
+  origin: licensed
+  source: {vendor: "Zess Type (The Black Han Sans Project Authors)", product: "Black Han Sans 라이선스 전문", url: "https://github.com/google/fonts/tree/main/ofl/blackhansans"}
+  licence: {id: OFL-1.1}
+  date: 2026-11-26
+  ships: true
+- path: assets/bg/
+  origin: code
+  tool: "PIL 스크립트: 단순한 형태를 그린 뒤 흐리게 처리한 장면 배경 11장"
+  date: 2026-11-26
+  ships: true

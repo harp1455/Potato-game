@@ -1,0 +1,1361 @@
+<!doctype html>
+<!-- PROTOTYPE - NOT FOR PRODUCTION -->
+<!-- Question: 파트너 크루와 함께 피크타임을 넘기는 영업 루프가 3일 동안 재미있는가? -->
+<!-- Date: 2026-11-25 -->
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>골든번 이태원역점</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #16202b; overflow: hidden; }
+  body { font-variant-numeric: tabular-nums; }
+  @font-face { font-family: 'GB Title'; src: url('assets/fonts/BlackHanSans-title.woff2') format('woff2'); font-display: swap; }
+  @font-face { font-family: 'Jua'; src: url('assets/fonts/Jua-Regular.woff2') format('woff2'); font-display: swap; }
+  canvas { display: block; margin: 0 auto; touch-action: none; }
+  #nm { position: fixed; display: none; box-sizing: border-box; text-align: center; border: 4px solid #22303f;
+        border-radius: 16px; background: #ffffff; color: #22303f; outline: none; padding: 0; font-family: 'Jua', sans-serif; }
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<input id="nm" maxlength="8" value="신입" aria-label="이름">
+<script src="config.js"></script>
+<script src="story.js"></script>
+<script>
+'use strict';
+// ---- Built to be checked ----------------------------------------------------------------
+const params = new URLSearchParams(location.search);
+const tune = new Proxy({}, { get: (_, k) => CONFIG[k].value }); // live: tune.speed is CONFIG.speed.value
+const STEP = 1 / 60;            // simulation step in seconds
+const W = 720, H = 1280;        // logical size: 세로 9:16
+const PIXEL = false;
+const FONT = '"Jua","Pretendard","SUIT","Noto Sans KR","Apple SD Gothic Neo","Malgun Gothic","Noto Sans CJK KR",sans-serif';
+const TITLE = '골든번 이태원역점';
+const clock = window.GAME_CLOCK || { now: () => performance.now() / 1000 }; // a check may inject one
+const CHEAP = params.get('render') === 'cheap';
+let seed;
+function rng() { // mulberry32; every gameplay random call reads this, never Math.random
+  seed = (seed + 0x6D2B79F5) | 0;
+  let t = Math.imul(seed ^ (seed >>> 15), seed | 1);
+  t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+}
+const events = []; // window.game.events
+
+// ---- Screen ---------------------------------------------------------------------------
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const nameInput = document.getElementById('nm');
+function fit() {
+  const k = Math.min(innerWidth / W, innerHeight / H);
+  const s = PIXEL ? Math.max(1, Math.floor(k)) : k;
+  const r = PIXEL ? 1 : s * (devicePixelRatio || 1);
+  canvas.width = Math.round(W * r); canvas.height = Math.round(H * r);
+  canvas.style.width = Math.round(W * s) + 'px'; canvas.style.height = Math.round(H * s) + 'px';
+  const top = Math.max(0, Math.floor((innerHeight - H * s) / 2));
+  canvas.style.marginTop = top + 'px';
+  ctx.setTransform(r, 0, 0, r, 0, 0); ctx.imageSmoothingEnabled = !PIXEL;
+  const left = (innerWidth - W * s) / 2;
+  nameInput.style.left = (left + 190 * s) + 'px'; nameInput.style.top = (top + 742 * s) + 'px';
+  nameInput.style.width = (340 * s) + 'px'; nameInput.style.height = (72 * s) + 'px';
+  nameInput.style.fontSize = (30 * s) + 'px';
+}
+addEventListener('resize', fit); fit();
+</script>
+<script src="art.js"></script>
+<script>
+'use strict';
+// ---- Input ------------------------------------------------------------------------------
+const down = new Set(), hit = new Set();
+const pressed = code => hit.has(code);
+const taps = []; let zones = [], zoneRects = {};
+const press = {}; // 버튼이 눌린 직후의 눌림 애니메이션 (초)
+function zone(id, x, y, w, h) { zones.push({ id, x, y, w, h, scene }); zoneRects[id] = [x, y, w, h]; }
+addEventListener('keydown', e => {
+  startAudio();
+  if (e.isComposing) return;
+  if (e.target === nameInput && e.code !== 'Enter') return;
+  if (!e.repeat) { down.add(e.code); hit.add(e.code); }
+  if (e.code === 'Space' || e.code.startsWith('Arrow')) e.preventDefault();
+});
+addEventListener('keyup', e => down.delete(e.code));
+canvas.addEventListener('pointerdown', e => {
+  startAudio();
+  const r = canvas.getBoundingClientRect();
+  taps.push({ x: (e.clientX - r.left) / r.width * W, y: (e.clientY - r.top) / r.height * H });
+  e.preventDefault();
+});
+addEventListener('pointerdown', () => startAudio());
+addEventListener('blur', () => down.clear());
+
+// ---- Audio --------------------------------------------------------------------------------
+let audio = null, muted = false;
+function startAudio() {
+  if (!audio) {
+    const ac = window.GAME_AUDIO || new (window.AudioContext || window.webkitAudioContext)();
+    const out = ac.createGain(); out.gain.value = muted ? 0 : tune.volume;
+    out.connect(ac.destination); audio = { ac, out };
+  }
+  if (audio.ac.state === 'suspended') audio.ac.resume();
+}
+function setMuted(m) { muted = m; if (audio) audio.out.gain.value = m ? 0 : tune.volume; }
+addEventListener('tune', () => setMuted(muted));
+function tone(freq, dur, type = 'square', vol = 0.3, delay = 0) {
+  if (!audio || muted) return;
+  const t = audio.ac.currentTime + delay, o = audio.ac.createOscillator(), g = audio.ac.createGain();
+  o.type = type; o.frequency.value = freq;
+  g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+  o.connect(g).connect(audio.out); o.start(t); o.stop(t + dur);
+}
+const sfx = {
+  tap: () => tone(520, 0.05, 'triangle', 0.2),
+  drop: k => tone(300 + k * 60, 0.07, 'triangle', 0.25),
+  ready: () => { tone(700, 0.08, 'triangle', 0.25); tone(1050, 0.1, 'triangle', 0.2, 0.06); },
+  serve: () => { tone(880, 0.1, 'triangle', 0.3); tone(1320, 0.16, 'triangle', 0.3, 0.08); },
+  bad: () => tone(150, 0.22, 'sawtooth', 0.2),
+  peak: () => { tone(660, 0.15, 'square', 0.2); tone(990, 0.25, 'square', 0.2, 0.15); },
+  blip: who => tone({ minjun: 190, gwangsik: 150, gwancheol: 220, daeheon: 300, taebeom: 170, seongdo: 330 }[who] || 260, 0.03, 'square', 0.08),
+  choice: () => { tone(600, 0.08, 'triangle', 0.25); tone(900, 0.12, 'triangle', 0.25, 0.07); },
+  stamp: () => { tone(220, 0.2, 'triangle', 0.35); tone(880, 0.3, 'triangle', 0.25, 0.1); },
+};
+
+// ---- 화면 효과: 입자, 뜨는 글자 --------------------------------------------------------------
+const fx = []; let vseed = 7;
+function vr() { vseed = (vseed * 1664525 + 1013904223) >>> 0; return vseed / 4294967296; } // 보이는 것에만 쓰는 난수
+function burst(k, x, y, n, o = {}) {
+  for (let i = 0; i < n; i++) fx.push({ k, x, y, vx: (vr() - 0.5) * (o.sp || 320), vy: -(120 + vr() * (o.up || 320)), t: 0, life: 0.6 + vr() * 0.4, g: o.g === undefined ? 900 : o.g, s: o.s || 1 });
+}
+function floatText(txt, x, y, c) { fx.push({ k: 'txt', x, y, vx: 0, vy: -70, t: 0, life: 1.2, g: 0, txt, c }); }
+function updateFx(dt) {
+  for (let i = fx.length - 1; i >= 0; i--) {
+    const p = fx[i]; p.t += dt; p.vy += p.g * dt; p.x += p.vx * dt; p.y += p.vy * dt;
+    if (p.t >= p.life) fx.splice(i, 1);
+  }
+  for (const id in press) if (press[id] > 0) press[id] -= dt;
+}
+function drawFx() {
+  for (const p of fx) {
+    ctx.globalAlpha = clamp((1 - p.t / p.life) * 2.5, 0, 1);
+    if (p.k === 'coin') drawCoin(p.x, p.y, 10 * p.s);
+    else if (p.k === 'heart') drawHeart(p.x, p.y, 0.9 * p.s);
+    else if (p.k === 'star') drawStar(p.x, p.y, 11 * p.s, C.sun, p.t * 6);
+    else if (p.k === 'spark') ell(p.x, p.y, 5 * p.s, 5 * p.s, C.white, null);
+    else if (p.k === 'txt') textO(p.txt, p.x, p.y, 26, p.c || C.white, C.ink, 6);
+  }
+  ctx.globalAlpha = 1;
+}
+
+// ---- 저장 -------------------------------------------------------------------------------
+const SAVE_KEY = 'golden-bun-save-v3';
+const CREW_IDS = Object.keys(STORY.crew);
+const PARTNERS = CREW_IDS.filter(id => !STORY.crew[id].rider), RIDERS = CREW_IDS.filter(id => STORY.crew[id].rider); // 라이더는 파트너로 고르지 않는다
+let curSeason = null; // 이번 주 시즌 메뉴 (그림도 이 값을 본다)
+function seasonOf(sv) { return sv.week >= tune.seasonWeek ? STORY.seasons[(sv.week - tune.seasonWeek) % STORY.seasons.length] : null; }
+function riderOf(sv) { return RIDERS[(totalDay(sv) - 1) % RIDERS.length]; } // 날마다 번갈아 배달을 맡는다
+function bm(id) { return !!(id && state.save.flags['banmal_' + id]); } // 그 크루와 말을 놓았는가
+function newSave(name) {
+  const zero = () => Object.fromEntries(CREW_IDS.map(k => [k, 0]));
+  return { name: name || '신입', week: 1, day: 1, aff: zero(), count: zero(), seen: zero(), dates: {}, flags: {}, grades: [], sales: 0, total: 0, stamina: tune.staminaStart };
+}
+function loadSave() { try { const s = JSON.parse(localStorage.getItem(SAVE_KEY)); return s && s.week ? s : null; } catch (e) { return null; } }
+function persist() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(state.save)); } catch (e) { /* 저장 불가: 그대로 진행 */ } }
+function wipeSave() { try { localStorage.removeItem(SAVE_KEY); } catch (e) { /* 무시 */ } }
+
+// ---- 관계, 평가, 날짜 ----------------------------------------------------------------------
+function relIdx(aff) { return aff >= tune.rel3 ? 3 : aff >= tune.rel2 ? 2 : aff >= tune.rel1 ? 1 : 0; }
+function relOf(id) { return STORY.rel[relIdx(state.save.aff[id])]; }
+function gradeOf(score) { return score >= tune.gradeS ? 'S' : score >= tune.gradeA ? 'A' : score >= tune.gradeB ? 'B' : score >= tune.gradeC ? 'C' : 'D'; }
+const GRADES = ['D', 'C', 'B', 'A', 'S'];
+const GRADE_COLOR = { S: C.pink, A: C.sun, B: C.mint, C: C.sky, D: C.gray };
+function fill(s) { return s.replace(/\{name\}/g, state.save.name); }
+function totalDay(sv) { return (sv.week - 1) * tune.weekDays + sv.day; }
+function shiftOf(sv) { return STORY.shifts[(sv.day - 1) % STORY.shifts.length]; }
+function isOpen(what, d) { // 그 메뉴나 규칙이 열렸는가
+  const td = totalDay(state.save);
+  if (what === 'cone') return td >= tune.dayCone;
+  if (what === 'double') return td >= tune.dayDouble;
+  if (what === 'custom') return td >= tune.dayCustom;
+  if (what === 'delivery') return td >= tune.dayDelivery;
+  if (what === 'season') return !!seasonOf(state.save);
+  return true;
+}
+
+// ---- 하루 ---------------------------------------------------------------------------------
+const ITEM_NAMES = { burger: '골든번버거', burger_np: '골든번(피클 빼기)', double: '더블치즈번', fries: '감자튀김', drink: '음료', cone: '아이스크림 콘' };
+const ITEMS = ['burger', 'burger_np', 'double', 'season', 'fries', 'drink', 'cone'];
+const BURGERS = ['burger', 'burger_np', 'double', 'season'];
+function itemName(id) { return id === 'season' ? (curSeason ? curSeason.name : '시즌 메뉴') : ITEM_NAMES[id]; }
+function recOf(id) { return id === 'season' ? (curSeason ? curSeason.recipe : []) : STORY.recipes[id]; }
+function ingName(id) { return id === 'special' ? (curSeason ? curSeason.specialName : '시즌 재료') : STORY.ingredients[id]; }
+const JOB_NAMES = { patty: '패티', fries: '감자튀김', drink: '음료', cone: '콘' };
+function priceOf(id) { return id === 'burger_np' ? tune.priceBurger : id === 'season' ? tune.priceSeason : tune['price' + id[0].toUpperCase() + id.slice(1)]; }
+function itemOpen(id) { return id === 'season' ? isOpen('season') : id === 'cone' ? isOpen('cone') : id === 'double' ? isOpen('double') : id === 'burger_np' ? isOpen('custom') : true; }
+function startDay(partner) {
+  const sv = state.save, perks = STORY.crew[partner].perks || {};
+  const zero = () => Object.fromEntries(ITEMS.map(k => [k, 0]));
+  curSeason = seasonOf(sv);
+  state.d = {
+    partner, perks, rider: riderOf(sv), riderPts: 0, chat: null, chatDone: false, time: 0, len: tune.dayLen + tune.dayLenGrow * (sv.day - 1), peakLen: tune.peakLen + tune.peakLenGrow * (sv.day - 1),
+    orders: [null, null, null, null], ghosts: [], spawnT: 1.5, spawned: 0, served: 0, lost: 0, qsum: 0, n: 0, wastes: 0,
+    sold: zero(), income: 0, tips: 0, discount: 0, fee: 0, bonus: 0, shown: 0,
+    shelf: zero(), pop: {}, patty: tune.pattyStart, stack: [],
+    grill: 0, fry: { s: 'idle', t: 0 }, drink: 0, cone: { tier: 0, phase: rng(), tiers: [], res: null, resT: 0 },
+    popup: null, popT: 0, peek: 0, ptask: null, bubble: { text: STORY.crew[partner].work.start, t: 4, age: 0 }, toast: { text: '', t: 0, kind: 'info', age: 0 },
+    wasPeak: false, banner: 0, tutorial: totalDay(sv) === 1, shake: 0, help: 0, helpTold: false, helped: 0, perfects: 0, reply: null,
+    slow: (sv.stamina <= tune.staminaLow ? tune.tiredSlow : 1) * (perks.stationMul || 1),
+  };
+}
+function inPeak(d) {
+  const t = d.time;
+  return (t >= tune.peak1Start && t < tune.peak1Start + d.peakLen) || (t >= tune.peak2Start && t < tune.peak2Start + d.peakLen);
+}
+function runs(d, what) { return (d.perks.runs || []).includes(what); } // 파트너가 맡은 일인가
+function say(d, key) { d.bubble = { text: STORY.crew[d.partner].work[key], t: 4, age: 0 }; }
+function note(d, s, kind = 'info') { d.toast = { text: s, t: 2.4, kind, age: 0 }; }
+function rating(d) { return d.n ? clamp(100 * d.qsum / d.n - tune.wastePenalty * d.wastes + tune.perfectPts * d.perfects, 0, 100) : 100; } // 완벽한 감자튀김과 콘은 가산점
+function waste(d, why) { d.wastes++; d.shake = 0.3; note(d, why, 'bad'); sfx.bad(); }
+function demand(d, id) { return d.orders.reduce((a, o) => a + (o ? o.items.filter(it => it.id === id && !it.done).length : 0), 0); }
+function ready(d, o) { // 남은 메뉴가 전부 선반에 있는가
+  const need = {};
+  for (const it of o.items) if (!it.done) need[it.id] = (need[it.id] || 0) + 1;
+  return Object.keys(need).every(id => d.shelf[id] >= need[id]);
+}
+function addShelf(d, id, n = 1) { d.shelf[id] += n; d.pop[id] = 0.3; }
+function genOrder(d) {
+  const sv = state.save; let items, delivery = false;
+  const teach = d.tutorial && d.spawned < tune.tutorialOrders;
+  if (teach && d.spawned === 0) items = ['burger'];
+  else if (teach && d.spawned === 1) items = ['burger', 'fries', 'drink'];
+  else {
+    const pool = [[['burger'], tune.wBurger], [['burger', 'fries', 'drink'], tune.wSet], [['fries'], tune.wFries]];
+    if (isOpen('cone')) pool.push([['cone'], tune.wCone], [['burger', 'cone'], tune.wBurgerCone]);
+    if (isOpen('double')) pool.push([['double'], tune.wDouble], [['double', 'fries', 'drink'], tune.wDoubleSet]);
+    if (isOpen('season')) pool.push([['season'], tune.wSeason], [['season', 'fries', 'drink'], tune.wSeasonSet]);
+    const total = pool.reduce((a, p) => a + p[1], 0);
+    const pick = () => { let r = rng() * total; for (const p of pool) { r -= p[1]; if (r < 0) return p[0]; } return pool[0][0]; };
+    if (isOpen('delivery') && rng() < tune.deliveryRate) { delivery = true; items = pick().concat(pick()).slice(0, 4); }
+    else items = pick().slice();
+    if (isOpen('custom')) items = items.map(id => (id === 'burger' && rng() < tune.customChance ? 'burger_np' : id));
+  }
+  let kind = 'normal', bit = null;
+  if (!delivery && items.length === 1 && items[0] === 'cone' && rng() < tune.gagChance) kind = 'choco';
+  else if (!delivery && !teach && rng() < tune.bitChance) { kind = 'bit'; bit = STORY.bits[Math.floor(rng() * STORY.bits.length)]; } // 손님의 한마디
+  let pat = (inPeak(d) ? tune.patiencePeak : tune.patienceCalm) - tune.patienceDayDrop * (sv.day - 1) - tune.patienceWeekDrop * (sv.week - 1);
+  pat = Math.max(tune.patienceMin, pat) * (d.perks.patienceMul || 1);
+  if (delivery) pat *= tune.deliveryPatience * (d.rider === 'taebeom' ? tune.riderPatienceMul : 1);
+  if (teach) pat *= 2;
+  return { items: items.map(id => ({ id, done: false })), kind, delivery, pat, patMax: pat, look: Math.floor(rng() * 10), born: d.time, enter: 0, auto: 0, bit, say: null };
+}
+function spawn(d) {
+  const i = d.orders.indexOf(null);
+  if (i < 0) return false;
+  const o = genOrder(d); d.orders[i] = o; d.spawned++;
+  if (o.kind === 'choco') { o.say = { text: STORY.customerLines.choco, t: 4 }; d.reply = { t: 1.3, text: STORY.crew[d.partner].work.choco }; }
+  if (o.kind === 'bit') { o.say = { text: o.bit.say, t: 4.5 }; d.reply = { t: 1.5, text: o.bit.re[d.partner] }; }
+  if (o.delivery) { const rc = STORY.crew[d.rider]; note(d, `${rc.name}: ${rc.call[Math.floor(rng() * rc.call.length)]}`, 'good'); }
+  if (d.tutorial && d.spawned === 2) { if (!runs(d, 'drink')) d.ptask = { id: 'drink', t: 1.5, max: 1.5 }; say(d, 'assist'); } // 첫날 세트의 음료는 파트너가 내 준다
+  return true;
+}
+function serve(d, i, byPartner) {
+  const o = d.orders[i]; if (!o) return;
+  let gave = false;
+  for (const it of o.items) if (!it.done && d.shelf[it.id] > 0) { d.shelf[it.id]--; it.done = true; gave = true; }
+  if (!gave) { note(d, '준비된 메뉴가 없어요'); return; }
+  sfx.tap();
+  if (!o.items.every(it => it.done)) return;
+  const ids = o.items.map(it => it.id), x = 96 + i * 176;
+  let pay = ids.reduce((a, id) => a + priceOf(id), 0);
+  const sets = Math.min(ids.filter(id => BURGERS.includes(id)).length, ids.filter(id => id === 'fries').length, ids.filter(id => id === 'drink').length);
+  pay -= sets * tune.setDiscount; d.discount += sets * tune.setDiscount;
+  ids.forEach(id => d.sold[id]++);
+  if (d.perks.payMul) { const b = Math.round(pay * (d.perks.payMul - 1) / 100) * 100; d.bonus += b; pay += b; }
+  if (o.delivery) { const f = Math.round(tune.deliveryFee * (d.rider === 'daeheon' ? tune.riderPayMul : 1) / 100) * 100; d.fee += f; pay += f; d.riderPts++; }
+  const fast = o.pat / o.patMax >= tune.fastFrac;
+  d.income += pay; d.qsum += fast ? 1 : tune.slowQuality; d.n++; d.served++;
+  floatText('+' + won(pay), x, 420, C.sun); burst('coin', x, 440, 6);
+  if (fast) {
+    const tip = tune.tipFast * (d.perks.tipMul || 1); d.tips += tip;
+    floatText('팁 +' + won(tip), x, 376, C.mint); burst('star', x, 400, 3);
+    if (rng() < 0.25 || byPartner) say(d, 'good');
+  }
+  const word = !o.delivery && rng() < tune.thanksChance ? (fast ? STORY.thanks : STORY.grumble)[Math.floor(rng() * (fast ? STORY.thanks : STORY.grumble).length)] : null;
+  d.ghosts.push({ look: o.look, delivery: o.delivery, x, t: 0, word });
+  d.orders[i] = null; sfx.serve(); events.push('serve');
+}
+function tapIngredient(d, what) {
+  const st = d.stack;
+  if (what === 'trash') { if (st.length) { d.stack = []; note(d, '만들던 버거를 버렸어요'); sfx.tap(); } return; }
+  if (what === 'bun') {
+    if (!st.length) { st.push({ id: 'bun', age: 0 }); sfx.drop(0); return; }
+    const key = st.map(s => s.id).concat('bun').join(',');
+    const made = BURGERS.find(id => itemOpen(id) && recOf(id).join(',') === key);
+    if (made) { addShelf(d, made); sfx.ready(); burst('star', 174, 930, 6); note(d, itemName(made) + ' 완성!', 'good'); }
+    else waste(d, '레시피와 달라요. 폐기했어요');
+    d.stack = []; return;
+  }
+  if (!st.length) { note(d, '먼저 번을 깔아 주세요'); return; }
+  if (st.length >= tune.stackMax) { note(d, '더 못 쌓아요. 번으로 덮어 주세요'); return; }
+  if (what === 'patty') {
+    if (d.patty <= 0) { note(d, runs(d, 'patty') ? '패티 굽는 중이에요. 조금만요!' : '패티가 없어요. 그릴에서 구워 주세요', 'bad'); return; }
+    d.patty--;
+  } else if (what === 'special' && !curSeason) { note(d, `시즌 재료는 ${tune.seasonWeek}주차에 열려요`); return;
+  } else if ((what === 'cheese' || what === 'ketchup') && !isOpen('double')) { note(d, `${STORY.ingredients[what]}: ${tune.dayDouble}일차에 열려요`); return; }
+  st.push({ id: what, age: 0 }); sfx.drop(st.length);
+}
+function tapStation(d, what) {
+  const who = STORY.crew[d.partner].name;
+  if (what === 'grill') {
+    if (runs(d, 'patty')) return note(d, `그릴은 ${who} 담당이에요`);
+    if (d.grill > 0) return;
+    if (d.patty > tune.pattyMax - tune.grillBatch) return note(d, '패티는 충분해요');
+    d.grill = tune.grillTime * d.slow; sfx.tap();
+  } else if (what === 'fry') {
+    if (runs(d, 'fries')) return note(d, `프라이어는 ${who} 담당이에요`);
+    const f = d.fry;
+    if (f.s === 'idle') { if (d.shelf.fries >= tune.friesMax) return note(d, '감자튀김은 충분해요'); f.s = 'cook'; f.t = tune.fryTime * d.slow; sfx.tap(); }
+    else if (f.s === 'cook') note(d, '아직 덜 익었어요');
+    else if (f.s === 'done') {
+      addShelf(d, 'fries', Math.min(tune.fryBatch, tune.friesMax - d.shelf.fries)); f.s = 'idle';
+      if (tune.fryBurn - f.t <= tune.fryPerfect) { d.perfects++; d.tips += tune.tipFries; note(d, `완벽한 타이밍! 가산점 +${tune.perfectPts} · 팁 +${won(tune.tipFries)}`, 'good'); sfx.serve(); burst('star', 130, 1130, 8); }
+      else sfx.ready();
+    }
+    else { f.s = 'idle'; sfx.tap(); }
+  } else if (what === 'drink') {
+    if (runs(d, 'drink')) return note(d, `음료는 ${who} 담당이에요`);
+    if (d.drink > 0) return;
+    if (d.shelf.drink >= tune.drinkMax) return note(d, '음료는 충분해요');
+    d.drink = tune.drinkTime * d.slow; sfx.tap();
+  }
+}
+function openPopup(d, which) {
+  if (which === 'cone') {
+    if (!isOpen('cone')) return note(d, `콘 기계는 ${tune.dayCone}일차에 열려요`);
+    if (runs(d, 'cone')) return note(d, `콘은 ${STORY.crew[d.partner].name} 담당이에요`);
+  }
+  if (d.popup === which) { d.popup = null; return; }
+  d.popup = which; d.popT = 0; sfx.tap();
+}
+function coneSpeed(d) {
+  const sv = state.save;
+  return Math.min(tune.coneSpeedCap, tune.coneSpeed * (1 + tune.coneTierUp * d.cone.tier) * (1 + tune.coneWeekUp * (sv.week - 1)));
+}
+function conePos(d) { const u = ((d.cone.phase % 1) + 1) % 1; return (u < 0.5 ? -1 + 4 * u : 3 - 4 * u) * tune.coneAmp; }
+function coneDrop(d) { // 노즐 위치에서 한 단 떨어뜨린다
+  const c = d.cone;
+  if (c.res) return;
+  if (c.tier === 0 && d.shelf.cone >= tune.coneMax) return note(d, '콘은 충분해요. 먼저 내보내 주세요');
+  const off = conePos(d);
+  if (Math.abs(off) > tune.coneOk) {
+    c.tiers.push({ off, age: 0, fail: true }); c.res = 'fail'; c.resT = 0.9; waste(d, '아이스크림이 떨어졌어요. 폐기!');
+    return;
+  }
+  c.tiers.push({ off, age: 0 }); c.tier++; sfx.drop(c.tier * 2);
+  if (c.tier === 3) {
+    const perfect = c.tiers.every(t => Math.abs(t.off) <= tune.conePerfect);
+    c.res = perfect ? 'perfect' : 'ok'; c.resT = 0.8; addShelf(d, 'cone');
+    if (perfect) { d.perfects++; d.tips += tune.tipCone; note(d, `완벽한 콘! 가산점 +${tune.perfectPts} · 팁 +${won(tune.tipCone)}`, 'good'); sfx.serve(); burst('star', 360, 1060, 8); }
+    else { note(d, '콘 완성!', 'good'); sfx.ready(); }
+  }
+}
+function partnerWork(d, dt) { // 파트너가 맡은 구역을 알아서 채운다
+  if (d.ptask) {
+    d.ptask.t -= dt;
+    if (d.ptask.t <= 0) {
+      const id = d.ptask.id;
+      if (id === 'patty') d.patty = Math.min(tune.pattyMax, d.patty + tune.grillBatch);
+      else if (id === 'fries') addShelf(d, 'fries', Math.min(tune.fryBatch, tune.friesMax - d.shelf.fries));
+      else addShelf(d, id);
+      d.ptask = null;
+    }
+    return;
+  }
+  let id = null;
+  if (runs(d, 'patty') && d.patty < 3) id = 'patty';
+  else if (runs(d, 'fries') && d.shelf.fries < Math.max(1, demand(d, 'fries'))) id = 'fries';
+  else if (runs(d, 'drink') && d.shelf.drink < Math.min(tune.drinkMax, Math.max(1, demand(d, 'drink')))) id = 'drink';
+  else if (runs(d, 'cone') && isOpen('cone') && d.shelf.cone < Math.min(tune.coneMax, Math.max(1, demand(d, 'cone')))) id = 'cone';
+  if (id) d.ptask = { id, t: tune.partnerTask, max: tune.partnerTask };
+}
+function doHelp(d, auto) { // 파트너가 가장 급한 주문의 메뉴를 만들어 준다
+  const cr = STORY.crew[d.partner];
+  if (d.help < 1) { if (!auto) note(d, '게이지가 차면 파트너가 도와줘요'); return; }
+  let bi = -1, bf = 2;
+  d.orders.forEach((o, i) => { if (o && !ready(d, o) && o.pat / o.patMax < bf) { bf = o.pat / o.patMax; bi = i; } });
+  if (bi < 0) { if (!auto) note(d, '지금은 도울 주문이 없어요'); return; }
+  const o = d.orders[bi], lim = tune.helpItems + (relIdx(state.save.aff[d.partner]) >= 2 ? 1 : 0), have = { ...d.shelf };
+  let n = 0;
+  for (const it of o.items) {
+    if (it.done) continue;
+    if (have[it.id] > 0) { have[it.id]--; continue; }
+    if (n >= lim) break;
+    addShelf(d, it.id); n++;
+  }
+  o.pat = Math.min(o.patMax, o.pat + tune.helpPatience);
+  d.help = 0; d.helped++; say(d, 'help'); sfx.serve(); events.push('help');
+  note(d, `${cr.name}의 도움! 메뉴 ${n}개가 준비됐어요`, 'good');
+  burst('star', 62, 696, 8); burst('heart', 96 + bi * 176, 330, 4, { g: -120, up: 120 });
+}
+function hintFor(d) { // 첫날 첫 주문들: 다음에 누를 곳
+  if (!d.tutorial || d.n >= tune.tutorialOrders) return null;
+  let oi = -1;
+  d.orders.forEach((o, i) => { if (o && (oi < 0 || o.born < d.orders[oi].born)) oi = i; });
+  if (oi < 0) return null;
+  const o = d.orders[oi];
+  for (const it of o.items) if (!it.done && d.shelf[it.id] > 0) return 'slot' + oi;
+  for (const it of o.items) {
+    if (it.done) continue;
+    if (it.id === 'burger') {
+      if (d.popup !== 'burger') return 'open_burger';
+      const rec = STORY.recipes.burger, k = d.stack.length;
+      if (d.stack.some((s, j) => s.id !== rec[j])) return 'trash';
+      if (rec[k] === 'patty' && d.patty <= 0) return runs(d, 'patty') ? null : 'grill';
+      return 'ing_' + rec[k];
+    }
+    if (it.id === 'fries' && !runs(d, 'fries') && d.fry.s !== 'cook') return 'fry';
+    if (it.id === 'drink' && !runs(d, 'drink') && d.drink <= 0 && !d.ptask) return 'drink';
+  }
+  return null;
+}
+function updateDay(d, dt) {
+  const sv = state.save;
+  d.time += dt; state.t += dt;
+  const peak = inPeak(d);
+  if (peak && !d.wasPeak) { say(d, 'peak'); sfx.peak(); d.banner = 1.6; events.push('peak'); }
+  if (!peak && d.wasPeak) say(d, 'calm');
+  d.wasPeak = peak;
+  // 손님
+  if (d.time < d.len) {
+    d.spawnT -= dt;
+    const teach = d.tutorial && d.n < tune.tutorialOrders && d.time < tune.peak1Start; // 안내 주문은 한 명씩, 놓치거나 피크가 오면 넘어간다
+    if (teach) { if (d.spawned <= d.n && d.spawnT <= 0) { spawn(d); d.spawnT = 1.5; } }
+    else if (d.spawnT <= 0) {
+      const gap = (peak ? tune.spawnPeak : tune.spawnCalm) * Math.max(tune.weekSpawnFloor, Math.pow(tune.weekSpawnMul, sv.week - 1));
+      d.spawnT = spawn(d) ? gap : 0.5;
+    }
+  }
+  d.orders.forEach((o, i) => {
+    if (!o) return;
+    o.enter = Math.min(1, o.enter + dt / 0.35);
+    if (o.say && (o.say.t -= dt) <= 0) o.say = null;
+    o.pat -= dt;
+    if (o.pat <= 0) {
+      d.orders[i] = null; d.lost++; d.n++; d.shake = 0.3;
+      note(d, o.delivery ? '배달이 취소됐어요. 클레임 +1' : '손님이 떠났어요. 클레임 +1', 'bad'); say(d, 'lost'); sfx.bad(); events.push('lost');
+      return;
+    }
+    const auto = o.delivery ? true : d.perks.autoServe; // 준비된 배달은 라이더가 가져가고, 응대 담당은 매장 주문을 대신 내준다
+    if (auto && ready(d, o)) { o.auto += dt; if (o.auto >= tune.autoDelay) serve(d, i, true); } else o.auto = 0;
+  });
+  d.ghosts = d.ghosts.filter(g => (g.t += dt) < (g.word ? 1.6 : 0.45));
+  if (d.reply) { d.reply.t -= dt; if (d.reply.t <= 0) { if (d.reply.text) d.bubble = { text: d.reply.text, t: 4, age: 0 }; d.reply = null; } } // 손님 말에 파트너가 한 박자 뒤에 대답한다
+  // 구역
+  if (d.grill > 0) { d.grill -= dt; if (d.grill <= 0) { d.patty = Math.min(tune.pattyMax, d.patty + tune.grillBatch); sfx.ready(); } }
+  if (d.fry.s === 'cook') { d.fry.t -= dt; if (d.fry.t <= 0) { d.fry.s = 'done'; d.fry.t = tune.fryBurn; sfx.ready(); note(d, '감자튀김이 다 됐어요. 건져 주세요!', 'good'); } }
+  else if (d.fry.s === 'done') { d.fry.t -= dt; if (d.fry.t <= 0) { d.fry.s = 'burnt'; waste(d, '감자튀김이 타 버렸어요. 폐기!'); } }
+  if (d.drink > 0) { d.drink -= dt; if (d.drink <= 0) { addShelf(d, 'drink'); sfx.ready(); } }
+  // 콘 팝업
+  const c = d.cone;
+  for (const t of c.tiers) t.age += dt;
+  if (c.res) { c.resT -= dt; if (c.resT <= 0) { c.res = null; c.tier = 0; c.tiers = []; c.phase = rng(); } }
+  else if (d.popup === 'cone') c.phase += coneSpeed(d) * dt;
+  partnerWork(d, dt);
+  // 근무 중 잡담: 한산할 때 파트너가 한 번 말을 건다
+  const chats = STORY.chats[d.partner];
+  if (!d.chatDone && chats && d.time >= tune.chatAt && !peak && d.time < d.len && !(d.tutorial && d.n < tune.tutorialOrders)) {
+    d.chat = { ...chats[sv.count[d.partner] % chats.length], t: tune.chatTime, age: 0 }; d.chatDone = true; sfx.choice();
+  }
+  if (d.chat) { d.chat.t -= dt; d.chat.age += dt; if (d.chat.t <= 0) d.chat = null; }
+  // 도움 게이지
+  if (d.help < 1) {
+    d.help = Math.min(1, d.help + dt / tune.helpCharge * (1 + tune.helpRelBonus * relIdx(sv.aff[d.partner])) * (peak ? tune.helpPeakMul : 1));
+    if (d.help >= 1 && !d.helpTold) { d.helpTold = true; note(d, '도움 게이지가 찼어요. 파트너를 터치해 보세요!', 'good'); }
+  } else if (d.orders.some(o => o && !ready(d, o) && o.pat / o.patMax < tune.helpAuto)) doHelp(d, true);
+  // 화면 타이머
+  for (const s of d.stack) s.age += dt;
+  for (const id in d.pop) if (d.pop[id] > 0) d.pop[id] -= dt;
+  if (d.popup) d.popT = Math.min(1, d.popT + dt / 0.28);
+  if (d.peek > 0) d.peek -= dt;
+  if (d.bubble.t > 0) { d.bubble.t -= dt; d.bubble.age += dt; }
+  if (d.toast.t > 0) { d.toast.t -= dt; d.toast.age += dt; }
+  if (d.banner > 0) d.banner -= dt;
+  if (d.shake > 0) d.shake -= dt;
+  d.shown += (d.income + d.tips - d.shown) * Math.min(1, dt * 8);
+  if (d.time >= d.len && d.orders.every(o => !o)) finishDay(d);
+}
+function finishDay(d) {
+  const sv = state.save, score = rating(d), grade = gradeOf(score);
+  const wasteCost = d.wastes * tune.wasteCost, total = d.income + d.tips - wasteCost;
+  const bonus = grade === 'S' ? tune.affS : grade === 'A' ? tune.affA : grade === 'B' ? tune.affB : 0;
+  const before = relIdx(sv.aff[d.partner]);
+  sv.aff[d.partner] += tune.affWork + bonus;
+  sv.grades.push(grade); sv.sales += total; sv.total += total;
+  const riderGain = Math.min(tune.riderAffMax, Math.floor(d.riderPts / tune.riderAffPer)); // 배달을 같이 뛴 라이더와도 조금 가까워진다
+  sv.aff[d.rider] += riderGain;
+  state.sum = { rider: d.rider, riderGain, riderPts: d.riderPts, score, grade, wasteCost, total, gain: tune.affWork + bonus, before, after: relIdx(sv.aff[d.partner]), week: sv.week, day: sv.day, partner: d.partner, t: 0, stamped: false };
+  events.push('dayend:' + grade);
+  scene = 'settle';
+}
+
+// ---- 이야기 장면 (마감 후 이벤트) ----------------------------------------------------------
+function startVN(ev, owner, after) {
+  const fl = state.save.flags, nodes = ev.nodes.filter(n => (!n.if || fl[n.if]) && (!n.ifnot || !fl[n.ifnot])).map(n => ({ ...n }));
+  state.vn = { nodes, i: 0, chars: 0, loc: ev.loc, place: ev.place, owner, shown: null, face: 'neutral', after, id: ev.id, gain: 0, last: null, age: 0, choiceT: 0 };
+  enterNode(); scene = 'event';
+}
+function enterNode() {
+  const v = state.vn, n = v.nodes[v.i];
+  v.chars = 0; v.age = 0; v.choiceT = 0;
+  if (n && n.s) { v.face = n.f || 'neutral'; v.shown = n.s; }
+  if (n && n.set) state.save.flags[n.set] = true;
+  if (n && !n.c) v.last = n;
+}
+function vnText(n) { return fill((n.tb && bm(state.vn.owner) ? n.tb : n.t) || n.n || ''); }
+function optText(o) { return o.tb && bm(state.vn.owner) ? o.tb : o.t; }
+function vnNext() {
+  const v = state.vn, n = v.nodes[v.i];
+  if (!n || n.c) return;
+  const full = vnText(n).length;
+  if (v.chars < full) { v.chars = full; return; }
+  v.i++;
+  if (v.i >= v.nodes.length) { const f = v.after; f(); return; }
+  enterNode();
+}
+function vnChoose(k) {
+  const v = state.vn, n = v.nodes[v.i];
+  if (!n || !n.c || !n.c[k]) return;
+  const o = n.c[k], sv = state.save;
+  if (o.aff && v.owner) { sv.aff[v.owner] += o.aff; v.gain += o.aff; burst('heart', 360, 520, 4 + o.aff * 2, { g: -120, up: 160, sp: 420 }); floatText(`호감도 +${o.aff}`, 360, 560, C.pink); }
+  if (o.sta) sv.stamina = Math.min(5, sv.stamina + o.sta);
+  if (o.flag) sv.flags[o.flag] = true;
+  v.nodes.splice(v.i, 1, ...o.then.map(x => ({ ...x })));
+  sfx.choice(); events.push('choice');
+  enterNode();
+}
+function sceneTail(id, before, ev, extra) { // 장면이 끝난 뒤: 호감도와 속마음을 보여 주고 하루를 닫는다
+  const sv = state.save, v = state.vn, cr = STORY.crew[id], R = STORY.rel, after = relIdx(sv.aff[id]);
+  const change = after !== before ? `${R[before].e} ${R[before].label} → ${R[after].e} ${R[after].label}` : `${R[after].e} ${R[after].label}`;
+  const tail = [{ n: `${cr.name} 호감도 +${v.gain} · ${change}` }].concat(extra ? [{ n: extra }] : [], [{ n: `${cr.name}의 속마음: "${cr.mind[after]}"` }]);
+  startVN({ id: ev.id, loc: ev.loc, place: ev.place, nodes: tail }, id, endDay);
+  state.vn.shown = id; state.vn.face = after > before ? 'shy' : 'neutral';
+  if (after > before) burst('heart', 360, 340, 14, { g: -100, up: 200, sp: 520 });
+}
+function startEvent(id) { // 마감 후: 고른 크루와의 이야기 (다 봤으면 일상 장면)
+  const sv = state.save, sum = state.sum;
+  const list = STORY.events[id], seen = sv.seen[id], daily = seen >= list.length;
+  const pool = STORY.daily[id], ev = daily ? pool[(seen - list.length) % pool.length] : list[seen];
+  const high = GRADES.indexOf(sum.grade) >= GRADES.indexOf('A');
+  const before = relIdx(sv.aff[id]);
+  startVN({ ...ev, nodes: ev.nodes.concat(high && ev.bonus ? ev.bonus : []) }, id, () => {
+    if (daily) { sv.aff[id] += tune.affDaily; state.vn.gain += tune.affDaily; }
+    sv.seen[id]++;
+    sceneTail(id, before, ev);
+  });
+}
+function startDate(id, type, byMe) { // 퇴근 후 약속: 크루가 청했거나(byMe 아님) 내가 청했다
+  const sv = state.save, D = STORY.dates[id][type], cr = STORY.crew[id], key = id + ':' + type, first = !sv.dates[key];
+  const tname = STORY.dateTypes.find(t => t.id === type).name, before = relIdx(sv.aff[id]);
+  const pre = byMe ? [{ s: id, t: cr.accept, tb: cr.acceptB, f: 'smile' }] : [];
+  const ev = { id: 'date_' + id + '_' + type, loc: D.loc, place: D.place, nodes: pre.concat(D.nodes) };
+  startVN(ev, id, () => {
+    const g = first ? tune.affDate : tune.affDateAgain, sta = type === 'meal' ? tune.dateStaMeal : type === 'drink' ? tune.dateStaDrink : 0;
+    sv.aff[id] += g; state.vn.gain += g; sv.dates[key] = (sv.dates[key] || 0) + 1;
+    sv.stamina = clamp(sv.stamina + sta, 1, 5);
+    sceneTail(id, before, ev, `${tname} 약속을 다녀왔어요.` + (sta > 0 ? ' 든든하게 먹어서 체력 +1' : sta < 0 ? ' 내일은 조금 피곤할 거예요. 체력 -1' : ''));
+  });
+}
+function startGreet(id) { // 근무 전 출근 인사: 파트너와 한마디 주고받고, 오늘의 라이더가 한마디 한다
+  const sv = state.save, g = STORY.greet[id] && STORY.greet[id][Math.min(2, relIdx(sv.aff[id]))], rid = state.d.rider, rc = STORY.crew[rid];
+  if (!g) { scene = 'play'; return; }
+  const nodes = [{ s: id, t: g.t, f: 'smile' }, { c: g.a.map(a => ({ t: a[0], aff: a[1], then: [{ s: id, t: a[2], f: a[1] > 1 ? 'happy' : 'work' }] })) }];
+  if (rc.hello) nodes.push({ s: rid, t: rc.hello[Math.min(2, relIdx(sv.aff[rid]))], f: 'work' });
+  startVN({ id: 'greet', loc: 'counter', place: '출근', nodes }, id, () => { scene = 'play'; });
+}
+function openAfter() { // 정산 뒤: 누구와 시간을 보낼지 고른다. 오늘 같이 일한 파트너와 라이더가 있다
+  const sv = state.save, sum = state.sum, present = [sum.partner, sum.rider];
+  let request = null;
+  for (const id of present) {
+    const k = relIdx(sv.aff[id]);
+    if (k < 1 || !(!sv.flags['asked_' + id] || rng() < tune.dateChance)) continue;
+    const types = STORY.dateTypes.filter(t => k >= t.rel), fresh = types.filter(t => !sv.dates[id + ':' + t.id]), pool = fresh.length ? fresh : types;
+    request = { id, type: pool[Math.floor(rng() * pool.length)].id }; sv.flags['asked_' + id] = true;
+    break;
+  }
+  state.after = { present, request, mode: 'main', who: null, said: null };
+  scene = 'after';
+}
+function afterActs() { // 지금 고를 수 있는 것들
+  const a = state.after, sv = state.save, out = [], can = a.present.filter(id => relIdx(sv.aff[id]) >= 1);
+  if (a.mode === 'main') {
+    a.present.forEach((id, i) => out.push({ id: 'ev' + i, kind: 'event', who: id }));
+    if (a.request) out.push({ id: 'yes', kind: 'request', who: a.request.id });
+    if (can.length) out.push({ id: 'invite', kind: 'invite' });
+  } else if (a.mode === 'who') {
+    can.forEach(id => out.push({ id: 'w_' + id, kind: 'who', who: id })); out.push({ id: 'back', kind: 'back' });
+  } else {
+    STORY.dateTypes.forEach(t => out.push({ id: 't_' + t.id, kind: 'type', type: t, who: a.who, locked: relIdx(sv.aff[a.who]) < t.rel })); out.push({ id: 'back', kind: 'back' });
+  }
+  return out;
+}
+function endDay() {
+  const sv = state.save;
+  sv.count[state.sum.partner]++;
+  state.after = null;
+  sv.stamina = clamp(sv.stamina - tune.staminaDayCost + tune.staminaSleep, 1, 5);
+  sv.day++; persist();
+  scene = sv.day > tune.weekDays ? 'results' : 'pick';
+}
+function nextWeek() { // 주말을 쉬고 다음 주로
+  const sv = state.save;
+  sv.week++; sv.day = 1; sv.grades = []; sv.sales = 0; sv.stamina = tune.staminaStart; persist();
+  curSeason = seasonOf(sv);
+  scene = 'pick';
+}
+
+// ---- 이미지 슬롯: config.js 의 ART 에 적힌 파일만 불러온다 -------------------------------
+const imgs = {};
+function getImg(path) {
+  if (!path) return null;
+  if (!imgs[path]) { const im = new Image(); im.src = path; imgs[path] = im; }
+  const im = imgs[path];
+  return im.complete && im.naturalWidth ? im : null;
+}
+// 표정 이름: neutral, smile, shy, surprised, flustered, happy, work, annoyed, angry, tears, scorn. 없는 표정은 가까운 것으로 대신한다.
+const FACE_ALIAS = { surprised: 'flustered', flustered: 'surprised', happy: 'smile', work: 'neutral', annoyed: 'angry', angry: 'annoyed', tears: 'shy', scorn: 'annoyed' };
+const BUST_FACE = { flustered: 'surprised', happy: 'smile', work: 'neutral', annoyed: 'neutral', angry: 'neutral', tears: 'shy', scorn: 'neutral' };
+function artKey(id, f) { const art = (window.ART && ART.crew[id]) || {}; return art[f] ? f : art[FACE_ALIAS[f]] ? FACE_ALIAS[f] : art.neutral ? 'neutral' : null; }
+function drawPortrait(id, f, x, y, w, h, cgId, o = {}) {
+  const cr = STORY.crew[id], art = (window.ART && ART.crew[id]) || {}, key = artKey(id, f), cg = cgId && ART.cg[cgId];
+  const im = getImg(cg || (key && art[key]));
+  const F = !cg && key && ART.face && ART.face[id] && ART.face[id][key]; // 배경을 지운 스탠딩이면 얼굴 위치 [가운데 x, 가운데 y, 크기]
+  panel(x, y, w, h, o.r || 16, C.white, C.white, { shadow: o.shadow === undefined ? 6 : o.shadow, lip: false });
+  ctx.save(); ctx.beginPath(); ctx.roundRect(x + 3, y + 3, w - 6, h - 6, (o.r || 16) - 2); ctx.clip();
+  if (!im || F) { ctx.fillStyle = shade(cr.color, 0.62); ctx.fillRect(x, y, w, h); }
+  if (im && F && h >= 300) { // 큰 칸: 전신을 위에 맞춰 그대로
+    const k = h / im.naturalHeight * 1.04;
+    ctx.drawImage(im, x + (w - im.naturalWidth * k) / 2, y, im.naturalWidth * k, im.naturalHeight * k);
+  } else if (im && F) { // 작은 칸: 얼굴 쪽을 당겨서
+    const fs = F[2] * im.naturalHeight, sh = fs * (o.zoom || (w / h > 1.3 ? 1.45 : 1.15)), sw = sh * w / h;
+    ctx.drawImage(im, F[0] * im.naturalWidth - sw / 2, F[1] * im.naturalHeight - fs * 0.54, sw, sh, x, y, w, h);
+  } else if (im) {
+    const k = Math.max(w / im.naturalWidth, h / im.naturalHeight);
+    ctx.drawImage(im, x + (w - im.naturalWidth * k) / 2, y + (h - im.naturalHeight * k) / 2, im.naturalWidth * k, im.naturalHeight * k);
+  } else if (!key && !cg) drawCrewBust(id, x + w / 2, y + h * 0.68, h / 300, BUST_FACE[f] || f); // 스탠딩이 있는 크루는 불러오는 동안 빈 칸으로 둔다 (임시 그림이 먼저 비치지 않게)
+  ctx.restore();
+  ctx.beginPath(); ctx.roundRect(x, y, w, h, o.r || 16); ctx.strokeStyle = C.white; ctx.lineWidth = 5; ctx.stroke(); // 그림과 어울리게 검은 테 대신 흰 테
+  ctx.beginPath(); ctx.roundRect(x - 2, y - 2, w + 4, h + 4, (o.r || 16) + 2); ctx.strokeStyle = shade(cr.color, -0.1); ctx.lineWidth = 2; ctx.stroke();
+  if (!im && !key && h > 300) text('임시 그림 · 이미지 슬롯', x + w - 16, y + 24, 20, C.ink2, 'right');
+}
+
+function drawChar(id, f, cx, bottom, size, alpha = 1) { // 배경 없는 스탠딩을 틀 없이 그대로 세운다. size = 한 변 길이, bottom = 아래 끝
+  const art = (window.ART && ART.crew[id]) || {}, key = artKey(id, f), im = key ? getImg(art[key]) : null;
+  if (im) { ctx.globalAlpha = alpha; ctx.drawImage(im, cx - size / 2, bottom - size, size, size); ctx.globalAlpha = 1; }
+  else if (!key) drawCrewBust(id, cx, bottom - size * 0.36, size / 420, BUST_FACE[f] || f);
+}
+function drawChibi(id, cx, bottom, h) { // 2등신 작은 캐릭터. 없으면 얼굴 칸으로 대신한다
+  const p = window.ART && ART.chibi && ART.chibi[id], im = getImg(p);
+  if (im) { const w = h * im.naturalWidth / im.naturalHeight; ctx.drawImage(im, cx - w / 2, bottom - h, w, h); }
+  else if (!p) drawPortrait(id, 'work', cx - h * 0.5, bottom - h * 0.94, h, h * 0.94, null, { shadow: 0, r: 12 });
+}
+
+// ---- 버튼 ---------------------------------------------------------------------------------
+function btn(id, x, y, w, h, c1, c2, draw, o = {}) { // 눌리면 살짝 들어가는 버튼
+  const p = clamp((press[id] || 0) / 0.16, 0, 1), k = 1 - 0.06 * p;
+  ctx.save(); ctx.translate(x + w / 2, y + h / 2 + 4 * p); ctx.scale(k, k); ctx.translate(-(x + w / 2), -(y + h / 2));
+  panel(x, y, w, h, o.r || 18, c1, c2, { shadow: (o.shadow === undefined ? 6 : o.shadow) * (1 - p) });
+  if (draw) draw();
+  ctx.restore();
+  zone(id, x, y, w, h);
+}
+function labelBtn(id, x, y, w, h, label, c1, c2, size = 30, white = true) {
+  btn(id, x, y, w, h, c1, c2, () => { if (white) textO(label, x + w / 2, y + h / 2 - 1, size, C.white, shade(c2, -0.5), 6); else text(label, x + w / 2, y + h / 2 + 1, size, C.ink, 'center', true); }, { r: 22 });
+}
+function staminaRow(x, y, n, s = 1) { for (let i = 0; i < 5; i++) drawBolt(x + i * 28 * s, y, s, i < n); }
+
+// ---- Scenes -------------------------------------------------------------------------------
+let scene, state;
+function reset() {
+  seed = Number(params.get('seed')) || CONFIG.seed;
+  state = { t: 0, sceneT: 0, score: 0, gained: '', save: newSave('신입') };
+  startDay('seongdo'); // ?scene=play 로 바로 열어도 근무가 돌아가게
+}
+function header(title, sub) {
+  fillRect(0, 0, W, 140, C.cherry);
+  fillRect(0, 136, W, 6, C.sun);
+  textO(title, 360, sub ? 52 : 70, 38, C.white, C.ink, 8);
+  if (sub) text(sub, 360, 104, 22, C.sun, 'center', true);
+}
+
+const scenes = {
+  figures: {
+    keys: {}, act() {},
+    update(dt) { state.t += dt; },
+    draw() {
+      checker(0, 0, W, H, 60, C.paper, '#e3f7f1');
+      text('손님', W / 2, 40, 28, C.ink, 'center', true);
+      CUSTOMER_NAMES.forEach((n, i) => { drawCustomer(i, 76 + i * 118, 270, ['happy', 'ok', 'angry', 'ok', 'happy'][i], 0.8); text(n, 76 + i * 118, 296, 20, C.ink); });
+      drawItem('bag', 664, 220, 0.9); text('배달', 664, 296, 20, C.ink);
+      text('크루 (임시 스탠딩)', W / 2, 344, 28, C.ink, 'center', true);
+      CREW_IDS.forEach((id, i) => {
+        const x = 130 + (i % 3) * 230, y = 500 + Math.floor(i / 3) * 250;
+        drawCrewBust(id, x, y, 0.62, ['smile', 'neutral', 'neutral', 'smile', 'smile', 'smile'][i]); text(STORY.crew[id].name, x, y + 112, 22, C.ink, 'center', true);
+      });
+      text('메뉴와 재료', W / 2, 900, 28, C.ink, 'center', true);
+      ITEMS.forEach((id, i) => { drawItem(id, 56 + i * 101, 980, 0.9); text(itemName(id).replace('골든번(피클 빼기)', '피클 빼기').replace('아이스크림 콘', '콘'), 56 + i * 101, 1044, 20, C.ink); });
+      Object.keys(STORY.ingredients).forEach((id, i) => { drawItem(id, 66 + i * 118, 1120, 0.8); text(STORY.ingredients[id], 66 + i * 118, 1172, 20, C.ink); });
+      drawBunny(360, 1226, 0.9);
+    },
+  },
+  title: {
+    keys: { Enter: 'start', KeyC: 'continue' },
+    act(id) {
+      if (id === 'start') {
+        wipeSave(); reset();
+        state.save = newSave((nameInput.value || '').trim().slice(0, 8));
+        startVN(STORY.intro, null, () => { scene = 'pick'; });
+      } else if (id === 'continue') {
+        const s = loadSave(); if (!s) return;
+        reset(); state.save = s; curSeason = seasonOf(s); scene = s.day > tune.weekDays ? 'results' : 'pick';
+      }
+    },
+    update(dt) { state.t += dt; },
+    draw() {
+      const t = state.t;
+      sunburst(360, 330, t, C.sun, '#ffc21f');
+      checker(0, 1100, W, H, 60, C.mint, '#3fd6bb'); fillRect(0, 1094, W, 8, C.ink);
+      drawBunny(360, 236 + Math.sin(t * 2.4) * 10, 3, Math.sin(t * 1.2) * 0.05);
+      ctx.font = `176px "GB Title", ${FONT}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.lineJoin = 'round'; // 제목만 제목용 폰트
+      ctx.strokeStyle = C.ink; ctx.lineWidth = 18; ctx.fillStyle = C.ink; ctx.strokeText('골든번', 360, 482); ctx.fillText('골든번', 360, 482); // 그림자
+      ctx.strokeText('골든번', 360, 470); ctx.fillStyle = C.cherry; ctx.fillText('골든번', 360, 470);
+      ctx.font = `44px "GB Title", ${FONT}`; ctx.strokeStyle = C.ink; ctx.lineWidth = 10; ctx.strokeText('GOLDEN BUN', 360, 600); ctx.fillStyle = C.white; ctx.fillText('GOLDEN BUN', 360, 600);
+      text('오늘부터 출근합니다', 360, 656, 24, C.ink, 'center', true);
+      text('이름', 360, 716, 24, C.ink, 'center', true);
+      labelBtn('start', 150, 850, 420, 104, '새 게임', C.cherry, C.cherryD, 40);
+      if (loadSave()) labelBtn('continue', 150, 980, 420, 90, '이어하기', C.white, C.steel, 32, false);
+      text('주문을 확인하고, 만들고, 손님을 터치해 제공하세요', 360, 1150, 22, C.ink, 'center', true);
+      text('근무 실패는 없어요. 하루가 끝나면 평가만 남습니다', 360, 1190, 22, C.ink);
+      text('PC: B 조립대 · Q~Y 재료 · A S D 구역 · F 콘 · H 도움 · Z C 잡담 · 1~4 손님', 360, 1236, 20, C.ink);
+    },
+  },
+  event: {
+    keys: { Enter: 'next', Space: 'next', Digit1: 'c0', Digit2: 'c1', Digit3: 'c2' },
+    act(id) { if (id === 'next') vnNext(); else vnChoose(Number(id[1])); },
+    update(dt) {
+      state.t += dt;
+      const v = state.vn, n = v.nodes[v.i];
+      v.age += dt;
+      if (n && n.c) v.choiceT += dt;
+      if (n && !n.c) {
+        const before = Math.floor(v.chars);
+        v.chars = Math.min(vnText(n).length, v.chars + tune.typeSpeed * dt);
+        if (Math.floor(v.chars) > before && Math.floor(v.chars) % 3 === 0) sfx.blip(n.s);
+      }
+    },
+    draw() {
+      const v = state.vn, n = v.nodes[v.i], t = state.t;
+      drawLoc(v.loc, t);
+      const show = n && n.c ? v.last : n, who = v.shown, cg = v.id && ART.cg[v.id];
+      if (cg) drawPortrait(v.owner || who || 'seongdo', v.face, 30, 150, 660, 440, v.id);
+      else if (who) { // 캐릭터를 틀 없이 크게: 뒤에 그 크루의 색 원, 아래는 대사 창이 받친다
+        const cr = STORY.crew[who], pop = 1 + 0.025 * (1 - easeOut(v.age / 0.25)) * (show && show.s ? 1 : 0);
+        const k = ctx.getTransform().a;
+        ctx.save(); ctx.translate(360, 900); ctx.scale(pop, pop); ctx.translate(-360, -900);
+        ctx.shadowColor = 'rgba(12,20,34,0.45)'; ctx.shadowBlur = 34 * k; ctx.shadowOffsetY = 10 * k; // 배경에 그림자를 떨어뜨려 붙여 준다
+        drawChar(who, v.face, 360, 900, 730, 1);
+        ctx.restore();
+        const tint = { alley: 'rgba(20,40,90,0.14)', hall: 'rgba(20,40,90,0.12)', eaves: 'rgba(20,50,100,0.16)', street: 'rgba(20,40,90,0.14)', bar: 'rgba(120,50,20,0.10)', cafe: 'rgba(255,170,80,0.07)', home: 'rgba(255,190,110,0.06)', freezer: 'rgba(120,200,255,0.10)' }[v.loc];
+        if (tint) fillRect(0, 0, W, 900, tint); // 장면의 빛을 캐릭터에도 살짝 입힌다
+      } else drawBunny(360, 500 + Math.sin(t * 2) * 6, 3);
+      panel(24, 26, 290, 58, 20, C.white, C.white); text(v.place, 169, 56, 24, C.ink, 'center', true);
+      if (v.owner) { const R = relOf(v.owner); panel(406, 26, 290, 58, 20, C.white, C.white); text(`${R.e} ${R.label}`, 551, 56, 24, C.ink, 'center', true); }
+      panel(24, 884, 672, 300, 26, C.white, C.white);
+      if (show) {
+        const s = vnText(show), shown = n && n.c ? s : s.slice(0, Math.floor(v.chars));
+        if (show.s) { const cr = STORY.crew[show.s]; panel(44, 856, 196, 58, 20, cr.color, cr.color, { shadow: 4 }); textO(cr.name, 142, 886, 30, C.white, C.ink, 6); }
+        let left = shown.length; // 줄바꿈은 전체 문장으로 미리 정하고, 글자만 차례로 드러낸다
+        wrap(s, 604, 28).forEach((l, i) => { if (left > 0) text(l.slice(0, left), 58, 962 + i * 44, 28, show.s ? C.ink : C.ink2, 'left'); left -= l.length + 1; });
+        if (!(n && n.c) && v.chars >= s.length) { const by = 1150 + Math.sin(t * 6) * 4; poly([640, by - 8, 664, by - 8, 652, by + 8], C.cherry, C.ink, 3); }
+      }
+      if (n && n.c) {
+        n.c.forEach((o, k) => {
+          const p = easeBack((v.choiceT - k * 0.08) / 0.3), y = 870 - n.c.length * 104 + k * 104;
+          if (v.choiceT < k * 0.08) return;
+          ctx.save(); ctx.translate((1 - p) * 90, 0); ctx.globalAlpha = clamp(p, 0, 1);
+          btn('c' + k, 24, y, 672, 92, C.white, C.white, () => {
+            ell(72, y + 46, 24, 24, C.mint, C.ink, 4); textO(String(k + 1), 72, y + 47, 26, C.white, C.ink, 5);
+            const lines = wrap(fill(optText(o)), 560, 24, true);
+            lines.forEach((l, j) => text(l, 112, y + 46 + (j - (lines.length - 1) / 2) * 30, 24, C.ink, 'left', true));
+          }, { r: 24 });
+          ctx.restore();
+        });
+      } else { zone('next', 0, 0, W, H); panel(250, 1206, 220, 44, 22, C.ink, C.ink, { shadow: 0, lip: false }); text('터치해서 계속', 360, 1228, 20, C.white, 'center', true); }
+    },
+  },
+  pick: {
+    keys: { Digit1: 'p0', Digit2: 'p1', Digit3: 'p2', Digit4: 'p3' },
+    act(id) { const k = PARTNERS[Number(id[1])]; if (k) { startDay(k); sfx.choice(); startGreet(k); } },
+    update(dt) { state.t += dt; },
+    draw() {
+      const sv = state.save, sh = shiftOf(sv), rid = riderOf(sv), rc = STORY.crew[rid], ss = seasonOf(sv);
+      checker(0, 0, W, H, 60, '#e8fbf6', '#d6f5ec');
+      header(`${sv.week}주차 ${sv.day}일 · ${sh.name}조 ${String(sh.hour).padStart(2, '0')}:00`, '오늘의 파트너를 선택하세요');
+      panel(20, 156, 680, 76, 20, C.white, C.white, { shadow: 4 });
+      drawChibi(rid, 76, 230, 70);
+      text(`오늘의 라이더 ${rc.name}`, 134, 182, 22, C.ink, 'left', true); text(rc.station, 134, 210, 20, C.ink2, 'left');
+      curSeason = ss;
+      if (ss) { drawItem('season', 420, 194, 0.6); text('이번 주 시즌 메뉴', 456, 182, 20, C.cherryD, 'left', true); text(ss.name, 456, 210, 22, C.ink, 'left', true); }
+      else text(`시즌 메뉴는 ${tune.seasonWeek}주차부터`, 686, 196, 20, C.ink2, 'right');
+      PARTNERS.forEach((id, i) => {
+        const cr = STORY.crew[id], R = relOf(id), x = 20 + (i % 2) * 350, y0 = 248 + Math.floor(i / 2) * 474;
+        const p = easeBack((state.sceneT - i * 0.05) / 0.35), y = y0 + (1 - p) * 60;
+        if (state.sceneT < i * 0.05) return;
+        ctx.globalAlpha = clamp(p, 0, 1);
+        btn('p' + i, x, y, 330, 460, C.white, C.white, () => {
+          drawPortrait(id, 'neutral', x + 12, y + 12, 306, 296, null, { shadow: 0, r: 14, zoom: 1.5 });
+          ell(x + 36, y + 36, 18, 18, cr.color, C.white, 4); textO(String(i + 1), x + 36, y + 37, 22, C.white, C.ink, 4);
+          text(cr.full, x + 16, y + 338, 28, C.ink, 'left', true); text(cr.role, x + 314, y + 340, 20, C.ink2, 'right');
+          rr(x + 12, y + 362, 306, 38, 12, shade(cr.color, 0.7), null);
+          text(cr.station, x + 165, y + 382, 20, C.ink, 'center', true);
+          text(`${R.e} ${R.label}`, x + 16, y + 428, 22, C.ink, 'left', true); text(`같이 근무 ${sv.count[id]}회`, x + 314, y + 428, 20, C.ink2, 'right');
+        }, { r: 22 });
+        ctx.globalAlpha = 1;
+      });
+      text('체력', 250, 1236, 22, C.ink, 'right', true); staminaRow(284, 1236, sv.stamina, 1.2);
+      if (sv.stamina <= tune.staminaLow) text('지쳐서 조리가 느려져요', 590, 1236, 20, C.cherryD, 'center', true);
+    },
+  },
+  play: {
+    keys: { KeyB: 'open_burger', KeyF: 'open_cone', KeyA: 'grill', KeyS: 'fry', KeyD: 'drink', KeyQ: 'ing_bun', KeyW: 'ing_patty', KeyE: 'ing_cheese',
+      KeyR: 'ing_pickle', KeyT: 'ing_gold', KeyY: 'ing_ketchup', KeyG: 'trash', KeyX: 'close', KeyV: 'peek', KeyH: 'help', KeyU: 'ing_special', KeyZ: 'chat0', KeyC: 'chat1', Space: 'conedrop',
+      Digit1: 'slot0', Digit2: 'slot1', Digit3: 'slot2', Digit4: 'slot3', KeyP: 'pause', Escape: 'esc' },
+    act(id) {
+      const d = state.d;
+      if (id === 'pause' || (id === 'esc' && !d.popup)) { scene = 'pause'; return; }
+      if (id === 'esc' || id === 'close') { d.popup = null; return; }
+      if (id.startsWith('slot')) serve(d, Number(id[4]));
+      else if (id === 'open_burger') openPopup(d, 'burger');
+      else if (id === 'open_cone') openPopup(d, 'cone');
+      else if (id === 'conedrop') { if (d.popup === 'cone') coneDrop(d); }
+      else if (id === 'peek') { d.peek = tune.recipePeek; sfx.tap(); }
+      else if (id === 'help') doHelp(d, false);
+      else if (id === 'chat0' || id === 'chat1') {
+        if (!d.chat) return;
+        const [, aff, reply] = d.chat.a[Number(id[4])];
+        state.save.aff[d.partner] += aff; d.bubble = { text: reply, t: 4, age: 0 }; d.chat = null;
+        burst('heart', 62, 690, 3 + aff * 2, { g: -120, up: 140 }); floatText(`호감도 +${aff}`, 200, 640, C.pink); sfx.choice();
+      }
+      else if (id === 'trash') tapIngredient(d, 'trash');
+      else if (id.startsWith('ing_')) { if (d.popup !== 'burger') { d.popup = 'burger'; d.popT = 0; } tapIngredient(d, id.slice(4)); }
+      else tapStation(d, id);
+    },
+    update(dt) { updateDay(state.d, dt); },
+    draw() { drawPlay(); },
+  },
+  pause: {
+    keys: { KeyP: 'resume', Escape: 'resume', Enter: 'resume' },
+    act(id) { if (id === 'resume') scene = 'play'; else if (id === 'mute') setMuted(!muted); },
+    update() {},
+    draw() {
+      drawPlay(); zones = []; zoneRects = {};
+      ctx.fillStyle = 'rgba(26,38,52,0.78)'; ctx.fillRect(0, 0, W, H);
+      textO('일시정지', 360, 470, 60, C.white, C.ink, 10);
+      labelBtn('resume', 150, 570, 420, 104, '계속하기', C.sun, C.sunD, 36);
+      labelBtn('mute', 150, 704, 420, 90, muted ? '소리 켜기' : '소리 끄기', C.white, C.steel, 30, false);
+    },
+  },
+  settle: {
+    keys: { Enter: 'next' },
+    act(id) { if (id !== 'next') return; if (state.sum.t < 2.2) state.sum.t = 2.2; else openAfter(); },
+    update(dt) { state.t += dt; const s = state.sum; s.t += dt; if (!s.stamped && s.t > 0.35) { s.stamped = true; sfx.stamp(); burst('star', 150, 300, 12, { sp: 500 }); } },
+    draw() {
+      const d = state.d, s = state.sum, sv = state.save, cr = STORY.crew[s.partner], R = STORY.rel, t = s.t;
+      checker(0, 0, W, H, 60, '#e8f6ff', '#d5edff');
+      header(`${s.week}주차 ${s.day}일 정산`);
+      panel(30, 166, 660, 250, 28, C.white, C.paper);
+      if (t > 0.35) { const k = 3 - 2 * easeBack((t - 0.35) / 0.3); at(150, 292, k, () => { drawStar(0, 0, 84, GRADE_COLOR[s.grade], -0.15); textO(s.grade, 0, 6, 76, C.white, C.ink, 10); }); }
+      text('근무 평가', 450, 216, 24, C.ink2, 'center', true);
+      textO(`${Math.round(s.score * easeOut(t / 0.8))}점`, 450, 286, 64, C.sun, C.ink, 10);
+      text(`제공 ${d.served} · 클레임 ${d.lost} · 폐기 ${d.wastes} · 완벽 ${d.perfects}`, 450, 360, 22, C.ink, 'center', true);
+      panel(30, 440, 660, 420, 28, C.white, C.paper);
+      text('매출 정산', 60, 478, 26, C.ink, 'left', true);
+      const rows = [];
+      ITEMS.forEach(id => { if (d.sold[id]) rows.push([`${itemName(id)} × ${d.sold[id]}`, won(priceOf(id) * d.sold[id]), C.ink]); });
+      if (d.discount) rows.push(['세트 할인', '-' + won(d.discount), C.ink2]);
+      if (d.fee) rows.push(['배달비', '+' + won(d.fee), C.mintD]);
+      if (d.bonus) rows.push([`${cr.name}의 계산 솜씨`, '+' + won(d.bonus), C.mintD]);
+      if (d.tips) rows.push(['팁', '+' + won(d.tips), C.mintD]);
+      if (s.wasteCost) rows.push(['폐기', '-' + won(s.wasteCost), C.cherryD]);
+      const lh = Math.min(36, 280 / Math.max(1, rows.length));
+      if (!rows.length && t > 0.7) text('오늘은 매출이 없어요', 360, 640, 22, C.ink2);
+      rows.forEach((r, i) => { if (t < 0.7 + i * 0.08) return; text(r[0], 60, 522 + i * lh, 22, r[2], 'left'); text(r[1], 660, 522 + i * lh, 22, r[2], 'right', true); });
+      line(60, 814, 660, 814, C.ink, 3);
+      text('오늘 매출', 60, 838, 24, C.ink, 'left', true); text(won(s.total * easeOut((t - 0.7) / 0.8)), 660, 838, 28, C.ink, 'right', true);
+      if (t > 1.5) {
+        const p = easeBack((t - 1.5) / 0.3), oy = (1 - p) * 40; ctx.globalAlpha = clamp(p, 0, 1);
+        panel(30, 884 + oy, 660, 180, 28, C.white, C.paper);
+        ctx.save(); ctx.beginPath(); ctx.rect(30, 600, 260, 461 + oy); ctx.clip(); // 아래만 패널에 맞춰 자르고 위로는 튀어나오게
+        drawChar(s.partner, GRADES.indexOf(s.grade) >= 3 ? 'happy' : GRADES.indexOf(s.grade) <= 0 ? 'flustered' : 'smile', 160, 1104 + oy, 256);
+        ctx.restore();
+        textO(`${cr.name} 호감도 +${s.gain}`, 478, 926 + oy, 28, C.pink, C.ink, 6);
+        text(s.after !== s.before ? `${R[s.before].e} → ${R[s.after].e} ${R[s.after].label}` : `${R[s.after].e} ${R[s.after].label}`, 478, 972 + oy, 26, C.ink, 'center', true);
+        text(GRADES.indexOf(s.grade) >= 3 ? '평가 A 이상! 추가 장면이 열려요' : '평가 A 이상이면 추가 장면이 열려요', 478, 1012 + oy, 20, C.ink2);
+        text(`${STORY.crew[s.rider].name} 호감도 +${s.riderGain} · 배달 ${s.riderPts}건`, 478, 1044 + oy, 20, C.ink, 'center', true);
+        ctx.globalAlpha = 1;
+      }
+      if (t > 2.0) labelBtn('next', 150, 1110, 420, 104, '퇴근하기', C.cherry, C.cherryD, 38);
+      else zone('next', 0, 0, W, H);
+    },
+  },
+  after: { // 마감 후: 누구와 시간을 보낼까
+    keys: { Digit1: 'k1', Digit2: 'k2', Digit3: 'k3', Digit4: 'k4', Digit5: 'k5', Digit6: 'k6', KeyN: 'no', Escape: 'back' },
+    act(id) {
+      const a = state.after, sv = state.save, acts = afterActs();
+      if (id[0] === 'k') { const x = acts[Number(id[1]) - 1]; if (!x) return; id = x.id; }
+      if (id === 'no') { if (!a.request) return; const cr = STORY.crew[a.request.id]; a.said = { id: a.request.id, text: (bm(a.request.id) && cr.laterB) || cr.later }; a.request = null; sfx.tap(); return; }
+      if (id === 'back') { a.mode = 'main'; sfx.tap(); return; }
+      if (!acts.some(x => x.id === id)) return;
+      sfx.choice();
+      if (id.startsWith('ev')) startEvent(a.present[Number(id[2])]);
+      else if (id === 'yes') startDate(a.request.id, a.request.type, false);
+      else if (id === 'invite') { const can = a.present.filter(p => relIdx(sv.aff[p]) >= 1); if (can.length === 1) { a.who = can[0]; a.mode = 'type'; } else a.mode = 'who'; }
+      else if (id.startsWith('w_')) { a.who = id.slice(2); a.mode = 'type'; }
+      else if (id.startsWith('t_')) { const x = acts.find(y => y.id === id); if (x.locked) { a.said = { id: a.who, text: `${STORY.rel[x.type.rel].label} 단계부터 갈 수 있어요.`, sys: true }; return; } startDate(a.who, x.type.id, true); }
+    },
+    update(dt) { state.t += dt; },
+    draw() {
+      const a = state.after, sv = state.save, acts = afterActs();
+      checker(0, 0, W, H, 60, '#fff6dc', '#ffeec0');
+      header('마감 후', a.mode === 'main' ? '누구와 시간을 보낼까요?' : a.mode === 'who' ? '누구에게 제안할까요?' : `${STORY.crew[a.who].name}에게 뭘 하자고 할까요?`);
+      acts.forEach((x, i) => {
+        const ch = Math.min(232, Math.floor(1010 / acts.length) - 16), m = (ch - 132) / 2; // 고를 것이 적으면 카드와 그림을 크게
+        const y0 = 168 + i * (ch + 16), p = easeBack((state.sceneT - i * 0.05) / 0.3), y = y0 + (1 - p) * 40, cr = x.who ? STORY.crew[x.who] : null;
+        if (state.sceneT < i * 0.05) return;
+        ctx.globalAlpha = clamp(p, 0, 1);
+        const pinkish = x.kind === 'request';
+        btn(x.id, 24, y, 672, ch, x.locked ? '#e8ecf0' : pinkish ? '#ffe3ee' : C.white, C.white, () => {
+          ell(54, y + 30, 18, 18, pinkish ? C.pink : C.sun, C.ink, 3); text(String(i + 1), 54, y + 31, 20, C.ink, 'center', true);
+          let tx = 86;
+          if (cr && x.kind !== 'type') { const pw = Math.round((ch - 28) * 1.3); drawPortrait(x.who, x.kind === 'request' ? 'smile' : 'neutral', 84, y + 14, pw, ch - 28, null, { shadow: 0, r: 12 }); tx = 84 + pw + 18; }
+          ctx.save(); ctx.translate(0, m);
+          if (x.kind === 'event') {
+            const list = STORY.events[x.who], isNew = sv.seen[x.who] < list.length, R = relOf(x.who);
+            text(cr.rider ? `${cr.name}와 뒷문에서` : `${cr.name}와 마감 정리`, tx, y + 40, 26, C.ink, 'left', true);
+            text(isNew ? '새로운 이야기' : '소소한 일상', tx, y + 78, 20, isNew ? C.cherryD : C.ink2, 'left', true);
+            text(`${R.e} ${R.label}`, tx, y + 106, 20, C.ink2, 'left');
+          } else if (x.kind === 'request') {
+            const D = STORY.dates[x.who][a.request.type], tn = STORY.dateTypes.find(t => t.id === a.request.type).name;
+            text(`${cr.name}의 제안 · ${tn}`, tx, y + 32, 24, C.cherryD, 'left', true);
+            wrap('"' + ((bm(x.who) && D.askB) || D.ask) + '"', 546 - tx, 20).slice(0, 3).forEach((l, j) => text(l, tx, y + 64 + j * 24, 20, C.ink, 'left'));
+          } else if (x.kind === 'invite') { drawHeart(120, y + 66, 2); text('내가 먼저 제안하기', 190, y + 52, 26, C.ink, 'left', true); text('커피, 산책, 밥, 술, 집 놀러 가기', 190, y + 88, 20, C.ink2, 'left'); }
+          else if (x.kind === 'who') { text(`${cr.name}에게 제안하기`, tx, y + 52, 26, C.ink, 'left', true); text(`${relOf(x.who).e} ${relOf(x.who).label}`, tx, y + 88, 20, C.ink2, 'left'); }
+          else if (x.kind === 'type') { text(x.type.name, 90, y + 52, 28, x.locked ? C.ink2 : C.ink, 'left', true); text(x.locked ? `${STORY.rel[x.type.rel].label} 단계부터` : sv.dates[x.who + ':' + x.type.id] ? '가 본 적 있어요' : '아직 안 가 봤어요', 90, y + 90, 20, C.ink2, 'left'); }
+          else text('돌아가기', 360, y + 66, 26, C.ink, 'center', true);
+          ctx.restore();
+        }, { r: 22 });
+        if (x.kind === 'request') btn('no', 566, y + m + 44, 116, 46, C.white, C.white, () => text('다음에', 624, y + m + 67, 20, C.ink, 'center', true), { r: 16, shadow: 3 });
+        ctx.globalAlpha = 1;
+      });
+      if (a.said) { panel(24, 1150, 672, 96, 22, C.white, C.white); const cr = STORY.crew[a.said.id]; wrap(a.said.sys ? a.said.text : `${cr.name}: "${a.said.text}"`, 620, 22).slice(0, 2).forEach((l, j, arr) => text(l, 360, 1198 + (j - (arr.length - 1) / 2) * 28, 22, C.ink, 'center', true)); }
+    },
+  },
+  results: { // 주간 평가: 한 주가 끝날 때마다 나오고, 다음 주로 이어진다
+    keys: { Enter: 'next' },
+    act(id) { if (id === 'next') { nextWeek(); sfx.choice(); } },
+    update(dt) { state.t += dt; },
+    draw() {
+      const sv = state.save, t = state.sceneT;
+      sunburst(360, 300, state.t, C.mint, '#3fd6bb');
+      textO(`${sv.week}주차 주간 평가`, 360, 76, 48, C.white, C.ink, 10);
+      panel(30, 130, 660, 330, 30, C.white, C.paper);
+      sv.grades.forEach((g, i) => {
+        if (t < 0.2 + i * 0.15) return;
+        const k = 2 - easeBack((t - 0.2 - i * 0.15) / 0.3), x = 360 + (i - (sv.grades.length - 1) / 2) * 118;
+        at(x, 222, k, () => { drawStar(0, 0, 50, GRADE_COLOR[g], -0.15); textO(g, 0, 4, 44, C.white, C.ink, 8); });
+        text(`${i + 1}일`, x, 290, 20, C.ink2, 'center', true);
+      });
+      const avg = sv.grades.length ? GRADES[Math.round(sv.grades.reduce((a, g) => a + GRADES.indexOf(g), 0) / sv.grades.length)] : '-';
+      text(`평균 ${avg} 등급`, 190, 356, 26, C.ink, 'center', true);
+      textO(won(sv.sales * easeOut((t - 0.6) / 1)), 490, 356, 38, C.sun, C.ink, 8);
+      text(`${sv.name} · 누적 매출 ${won(sv.total)}`, 360, 418, 22, C.ink2, 'center', true);
+      CREW_IDS.forEach((id, i) => {
+        const cr = STORY.crew[id], k = relIdx(sv.aff[id]), R = STORY.rel[k], x = 30 + (i % 3) * 224, y = 486 + Math.floor(i / 3) * 190;
+        panel(x, y, 212, 178, 22, C.white, C.paper, { shadow: 4 });
+        drawPortrait(id, k >= 2 ? 'smile' : 'neutral', x + 10, y + 10, 192, 100, null, { shadow: 0, r: 12 });
+        text(cr.name, x + 16, y + 132, 22, C.ink, 'left', true); text(`${sv.count[id]}회`, x + 196, y + 132, 20, C.ink2, 'right');
+        text(`${R.e} ${R.label}`, x + 16, y + 158, 20, C.ink, 'left');
+      });
+      const top = CREW_IDS.filter(id => sv.count[id] > 0).sort((a, b) => sv.aff[b] - sv.aff[a])[0];
+      panel(30, 880, 660, 150, 26, C.white, C.paper);
+      if (top) { const lines = wrap(fill(STORY.crew[top].weekly[relIdx(sv.aff[top])]), 600, 24, true); lines.forEach((l, j) => text(l, 360, 955 + (j - (lines.length - 1) / 2) * 36, 24, C.ink, 'center', true)); }
+      labelBtn('next', 110, 1070, 500, 104, '다음 주 출근하기', C.cherry, C.cherryD, 36);
+      const nx = STORY.seasons[(sv.week + 1 - tune.seasonWeek + STORY.seasons.length * 99) % STORY.seasons.length];
+      text(sv.week + 1 >= tune.seasonWeek ? `다음 주 시즌 메뉴: ${nx.name} · 주말에 체력이 모두 회복돼요` : '주말 동안 체력이 모두 회복돼요', 360, 1216, 22, C.ink, 'center', true);
+    },
+  },
+};
+
+// ---- 영업 화면 ------------------------------------------------------------------------------
+function stationTile(id, x, y, w, h, label, color, icon, st) { // st: { status, prog, pc, theirs, locked, alert, busy, dark }
+  const t = state.t, off = st.theirs || st.locked, jx = st.alert ? Math.sin(t * 40) * 3 : 0;
+  ctx.save(); ctx.translate(jx, 0);
+  btn(id, x, y, w, h, off ? '#e8ecf0' : C.white, off ? '#d6dde4' : C.steel, () => {
+    panel(x + 12, y + 12, w - 24, 40, 14, color, color, { shadow: 0 }); textO(label, x + w / 2, y + 33, 24, C.white, C.ink, 5);
+    ctx.globalAlpha = off ? 0.4 : 1;
+    const bob = st.busy ? Math.sin(t * 10) * 3 : 0;
+    if (st.dark) ctx.filter = 'brightness(0.35)';
+    if (icon) drawItem(icon, x + w / 2 + (st.theirs ? 56 : 0), y + 112 + bob + (st.theirs ? 22 : 0), st.theirs ? 0.6 : 1.05);
+    ctx.filter = 'none'; ctx.globalAlpha = 1;
+    if (st.theirs) drawChibi(state.d.partner, x + w / 2 - 22, y + 158 - Math.abs(bob), 98); // 맡은 구역에서 일하는 파트너
+    if (st.prog >= 0) bar(x + 18, y + h - 76, w - 36, 20, st.prog, st.pc || C.green);
+    const lines = wrap(st.status, w - 20, 20, true);
+    lines.forEach((l, j) => text(l, x + w / 2, y + h - 30 + (j - (lines.length - 1) / 2) * 22, 20, st.alert ? C.cherryD : off ? C.ink2 : C.ink, 'center', true));
+  }, { r: 22 });
+  if (st.alert) { ctx.beginPath(); ctx.roundRect(x - 3, y - 3, w + 6, h + 6, 24); ctx.strokeStyle = C.cherry; ctx.lineWidth = 5; ctx.globalAlpha = 0.5 + 0.5 * Math.sin(t * 12); ctx.stroke(); ctx.globalAlpha = 1; }
+  ctx.restore();
+}
+function stationState(d, id) {
+  const cr = STORY.crew[d.partner], job = { grill: 'patty', fry: 'fries', drink: 'drink', cone: 'cone' }[id], theirs = runs(d, job);
+  if (id === 'cone' && !isOpen('cone')) return { status: `${tune.dayCone}일차 오픈`, prog: -1, locked: true };
+  if (theirs) return { status: `${cr.name} 담당`, prog: d.ptask && d.ptask.id === job ? 1 - d.ptask.t / d.ptask.max : -1, theirs: true, busy: !!(d.ptask && d.ptask.id === job) };
+  if (id === 'grill') return d.grill > 0 ? { status: '굽는 중…', prog: 1 - d.grill / (tune.grillTime * d.slow), busy: true } : { status: `패티 ${d.patty}장 · 굽기`, prog: -1 };
+  if (id === 'fry') {
+    const f = d.fry;
+    if (f.s === 'cook') return { status: '튀기는 중…', prog: 1 - f.t / (tune.fryTime * d.slow), busy: true };
+    if (f.s === 'done') { const hot = tune.fryBurn - f.t <= tune.fryPerfect; return { status: hot ? '지금이 딱!' : '어서 건지세요!', prog: f.t / tune.fryBurn, pc: hot ? C.green : C.cherry, alert: true }; }
+    if (f.s === 'burnt') return { status: '탔어요. 비우기', prog: -1, dark: true };
+    return { status: '터치해서 튀기기', prog: -1 };
+  }
+  if (id === 'drink') return d.drink > 0 ? { status: '따르는 중…', prog: 1 - d.drink / (tune.drinkTime * d.slow), busy: true } : { status: '터치해서 따르기', prog: -1 };
+  return { status: '터치해서 뽑기', prog: -1 };
+}
+function chip(id, x, y, icon, st, badge) { // 조립대 안에서 쓰는 작은 구역 버튼
+  const off = st.theirs || st.locked;
+  btn(id, x, y, 84, 52, st.alert ? '#ffd9de' : off ? '#e8ecf0' : C.white, st.alert ? '#ffb3bd' : off ? '#d6dde4' : C.steel, () => {
+    ctx.globalAlpha = off ? 0.45 : 1; if (st.dark) ctx.filter = 'brightness(0.35)';
+    drawItem(icon, x + 26, y + 26, 0.42); ctx.filter = 'none'; ctx.globalAlpha = 1;
+    if (st.prog >= 0) bar(x + 46, y + 20, 30, 12, st.prog, st.pc || C.green);
+    else if (badge !== undefined) text(String(badge), x + 62, y + 27, 20, C.ink, 'center', true);
+  }, { r: 14, shadow: 4 });
+}
+function drawStack(d, cx, base, s) { // 조립 중인 버거
+  let y = base;
+  d.stack.forEach((p, k) => {
+    const dy = (1 - easeOut(p.age / 0.18)) * -80 * s, w = 150 * s;
+    if (p.id === 'bun' && k === 0) { rr(cx - w / 2, y - 22 * s + dy, w, 22 * s, 9 * s, C.bunL); y -= 22 * s; }
+    else if (p.id === 'patty') { rr(cx - w / 2 - 4, y - 22 * s + dy, w + 8, 22 * s, 9 * s, C.patty); y -= 22 * s; }
+    else if (p.id === 'cheese') { poly([cx - w / 2 - 8, y + dy, cx + w / 2 + 8, y + dy, cx + w / 2 - 6, y - 12 * s + dy, cx - w / 2 + 6, y - 12 * s + dy], C.cheese); y -= 11 * s; }
+    else if (p.id === 'pickle') { for (let i = -1; i <= 1; i++) ell(cx + i * 44 * s, y - 6 * s + dy, 22 * s, 8 * s, C.pickle, C.ink, 3); y -= 11 * s; }
+    else if (p.id === 'special') {
+      const k = curSeason ? curSeason.special : 'chicken';
+      if (k === 'chicken') { rr(cx - w / 2 - 6, y - 24 * s + dy, w + 12, 24 * s, 11 * s, '#e39a2e'); y -= 24 * s; }
+      else if (k === 'egg') { ell(cx, y - 8 * s + dy, w / 2 + 4, 10 * s, C.white); ell(cx + 10, y - 11 * s + dy, 18 * s, 7 * s, C.sun, C.ink, 3); y -= 14 * s; }
+      else if (k === 'bulgogi') { rr(cx - w / 2 + 6, y - 9 * s + dy, w - 12, 9 * s, 4 * s, '#7a3b1e', C.ink, 3); y -= 8 * s; }
+      else { for (let i = -1; i <= 1; i++) ell(cx + i * 44 * s, y - 6 * s + dy, 20 * s, 8 * s, '#3f9d3a', C.ink, 3); y -= 11 * s; }
+    }
+    else { rr(cx - w / 2 + 6, y - 9 * s + dy, w - 12, 9 * s, 4 * s, p.id === 'gold' ? C.gold : C.ketchup, C.ink, 3); y -= 8 * s; }
+  });
+  return y;
+}
+function closeBtn() { btn('close', 620, 774, 76, 52, C.cherry, C.cherryD, () => { line(646, 788, 670, 812, C.white, 6); line(670, 788, 646, 812, C.white, 6); }, { r: 14, shadow: 4 }); }
+function drawBurgerPopup(d) {
+  const sv = state.save, p = easeBack(d.popT), oy = (1 - p) * 540, t = state.t;
+  ctx.save(); ctx.translate(0, oy);
+  panel(8, 764, 704, 510, 30, C.sunD, C.sunD);
+  textO('버거 조립대', 30, 800, 28, C.white, C.ink, 6, 'left');
+  chip('grill', 236, 774, 'patty', stationState(d, 'grill'), d.patty);
+  chip('fry', 328, 774, 'fries', stationState(d, 'fry'), d.shelf.fries);
+  chip('drink', 420, 774, 'drink', stationState(d, 'drink'), d.shelf.drink);
+  closeBtn();
+  // 쌓는 곳
+  const sx = d.shake > 0 ? Math.sin(t * 60) * 6 : 0;
+  panel(24, 838, 216, 214, 22, C.white, C.white, { shadow: 4 });
+  ell(132 + sx, 1030, 92, 12, C.steelD);
+  if (d.stack.length) drawStack(d, 132 + sx, 1024, 0.84);
+  else text('번부터 깔아요', 132, 940, 20, C.ink2, 'center', true);
+  // 레시피: 지금 만들 수 있는 버거 전부를 늘 보여 주고, 주문이 들어온 것은 개수를 붙인다
+  panel(250, 838, 446, 214, 22, C.white, C.white, { shadow: 4 });
+  const rows = BURGERS.filter(itemOpen), rh = Math.min(52, 198 / rows.length), key = d.stack.map(x => x.id).join(',');
+  const needOf = id => demand(d, id) - d.shelf[id], fits = id => d.stack.length > 0 && recOf(id).slice(0, d.stack.length).join(',') === key;
+  const cur = rows.find(id => fits(id) && needOf(id) > 0) || rows.find(fits) || (d.stack.length ? null : rows.find(id => needOf(id) > 0));
+  const SHORT = { burger: '골든번버거', burger_np: '피클 빼기', double: '더블치즈번' };
+  rows.forEach((id, i) => {
+    const y = 846 + rh * (i + 0.5), rec = recOf(id), need = needOf(id), pre = fits(id);
+    if (id === cur) rr(256, y - rh / 2 + 3, 434, rh - 6, 12, '#fff3d6', null);
+    if (need > 0) { ell(276, y, 15, 15, C.cherry, C.ink, 3); textO(String(need), 276, y + 1, 20, C.white, C.ink, 4); }
+    text(SHORT[id] || itemName(id), 298, y, 20, need > 0 || id === cur ? C.ink : C.ink2, 'left', true);
+    rec.forEach((ing, j) => {
+      const x = 458 + j * 34;
+      if (id === cur && j === d.stack.length) ell(x, y, 17, 17, '#ffe08a', C.cherry, 3);
+      ctx.globalAlpha = pre && j < d.stack.length ? 0.3 : 1; drawItem(ing, x, y, 0.32); ctx.globalAlpha = 1;
+    });
+  });
+  const dbl = isOpen('double');
+  // 재료
+  const ings = [['bun', d.stack.length ? '번 덮기' : '번 깔기', C.sun], ['patty', `패티 ×${d.patty}`, C.wood], ['cheese', '치즈', '#ffe680'], ['pickle', '피클', '#b5ec7f'],
+    ['gold', '골든소스', '#ffd866'], ['ketchup', '케첩', '#ff8a92'], ['special', curSeason ? curSeason.specialName : '시즌 재료', '#ffc48f'], ['trash', '버리기', C.white]];
+  ings.forEach(([id, label, c1], i) => {
+    const x = 16 + (i % 4) * 174, y = 1064 + Math.floor(i / 4) * 104, zid = id === 'trash' ? 'trash' : 'ing_' + id;
+    const off = ((id === 'cheese' || id === 'ketchup') && !dbl) || (id === 'patty' && d.patty <= 0) || (id === 'special' && !curSeason);
+    btn(zid, x, y, 166, 94, off ? '#e8ecf0' : c1, c1, () => {
+      ctx.globalAlpha = off ? 0.4 : 1; drawItem(id, x + 38, y + 48, 0.52); ctx.globalAlpha = 1;
+      const lines = wrap(label, 92, 20, true);
+      lines.forEach((l, j) => text(l, x + 114, y + 48 + (j - (lines.length - 1) / 2) * 24, 20, off ? C.ink2 : C.ink, 'center', true));
+    }, { r: 18 });
+  });
+  ctx.restore();
+}
+function drawConePopup(d) {
+  const p = easeBack(d.popT), oy = (1 - p) * 540, c = d.cone;
+  ctx.save(); ctx.translate(0, oy);
+  panel(8, 764, 704, 510, 30, '#ff86b6', '#e8588f');
+  textO('아이스크림 콘', 30, 800, 28, C.white, C.ink, 6, 'left');
+  textO(`보관 ${d.shelf.cone}/${tune.coneMax}`, 500, 800, 22, C.white, C.ink, 5);
+  panel(24, 838, 672, 420, 24, C.white, '#fff5fa', { shadow: 4 });
+  zone('conedrop', 24, 838, 672, 420);
+  closeBtn();
+  // 판정 구간
+  fillRect(360 - tune.coneOk, 900, tune.coneOk * 2, 276, 'rgba(39,205,176,0.14)');
+  fillRect(360 - tune.conePerfect, 900, tune.conePerfect * 2, 276, 'rgba(39,205,176,0.34)');
+  // 기계 레일과 노즐
+  panel(60, 850, 600, 34, 14, C.pink, '#ff6fa5', { shadow: 0 });
+  const nx = 360 + conePos(d);
+  if (!c.res) { panel(nx - 30, 870, 60, 44, 12, C.steel, C.steelD, { shadow: 3 }); poly([nx - 12, 914, nx + 12, 914, nx, 934], C.white); }
+  // 콘
+  poly([360 - 56, 1176, 360 + 56, 1176, 360, 1250], '#eaa860');
+  line(360 - 30, 1186, 360 + 18, 1232, C.woodD, 3); line(360 + 30, 1186, 360 - 18, 1232, C.woodD, 3);
+  const TY = [1160, 1116, 1078], TR = [60, 48, 34];
+  c.tiers.forEach((tr, k) => {
+    const a = easeOut(tr.age / 0.2), k2 = Math.min(k, 2);
+    if (tr.fail) { ell(360 + tr.off + Math.sign(tr.off) * tr.age * 160, Math.min(TY[k2] + tr.age * 500, 1236), TR[k2], TR[k2] * 0.5, C.white); return; }
+    const y = TY[k2] - (1 - a) * 180, sq = tr.age > 0.2 ? 1 + 0.25 * (1 - easeOut((tr.age - 0.2) / 0.15)) : 1;
+    ell(360 + tr.off, y, TR[k2] * sq, TR[k2] * 0.5 / sq, C.white);
+    if (k === 2 && a >= 1) poly([360 + tr.off, y - 34, 360 + tr.off + 10, y - 14, 360 + tr.off - 8, y - 12], C.white, C.ink, 3);
+  });
+  if (c.res) { const k = easeBack((0.9 - c.resT) / 0.25); at(360, 1000, k, () => textO(c.res === 'perfect' ? '완벽해요!' : c.res === 'ok' ? '콘 완성!' : '떨어졌어요…', 0, 0, 54, c.res === 'fail' ? C.cherry : c.res === 'perfect' ? C.sun : C.mint, C.ink, 10)); }
+  else text(c.tier === 0 && d.shelf.cone >= tune.coneMax ? '콘이 가득 찼어요. 먼저 손님에게 내보내세요' : `노즐이 가운데 올 때 터치! (${c.tier + 1}/3단)`, 360, 958, 22, C.ink, 'center', true);
+  ctx.restore();
+}
+function drawPlay() {
+  const d = state.d, sv = state.save, sh = shiftOf(sv), peak = inPeak(d), cr = STORY.crew[d.partner], t = state.t;
+  const shx = d.shake > 0 && !d.popup ? Math.sin(t * 70) * 5 : 0;
+  ctx.save(); ctx.translate(shx, 0);
+  drawStore(sh.sky, 158, 470, t, peak);
+  // 떠나는 손님
+  d.ghosts.forEach(gh => {
+    const k = Math.min(1, gh.t / 0.45); ctx.globalAlpha = 1 - k;
+    if (gh.delivery) { drawChibi(d.rider, gh.x - 14 - k * 140, 462, 124); drawItem('bag', gh.x + 46 - k * 140, 432, 0.6); }
+    else drawCustomer(gh.look, gh.x, 498 + easeOut(k) * 70 - Math.sin(k * Math.PI) * 26, 'happy', 0.86);
+    ctx.globalAlpha = 1;
+  });
+  // 손님과 주문표
+  d.orders.forEach((o, i) => {
+    if (!o) return;
+    const fr = o.pat / o.patMax, mood = fr > 0.6 ? 'happy' : fr > 0.28 ? 'ok' : 'angry', e = o.enter, a = clamp(e * 1.5, 0, 1);
+    const x = 96 + i * 176 + (mood === 'angry' ? Math.sin(t * 34) * 2 : 0), bob = Math.sin(t * 2.2 + i * 1.7) * 2;
+    if (o.delivery) { const ry = (1 - easeBack(e)) * 60 + bob; drawChibi(d.rider, x - 14, 462 + ry, 124); drawItem('bag', x + 46, 432 + ry, 0.6); }
+    else drawCustomer(o.look, x, 498 + (1 - easeOut(e)) * 110 + bob, mood, 0.86);
+    const ty = 172 + (1 - easeBack(e)) * -70;
+    ctx.globalAlpha = a;
+    ctx.fillStyle = 'rgba(26,38,52,0.25)'; ctx.beginPath(); ctx.roundRect(x - 80, ty + 6, 160, 108, 8); ctx.fill();
+    const rc = [x - 80, ty, x + 80, ty, x + 80, ty + 108]; // 영수증 롤에서 뜯은 주문표
+    for (let k = 0; k < 8; k++) rc.push(x + 80 - k * 20 - 10, ty + 116, x + 80 - (k + 1) * 20, ty + 108);
+    poly(rc, C.white);
+    if (o.delivery) { rr(x - 78, ty + 2, 156, 26, 4, C.mintD, null); text('배달', x, ty + 15, 20, C.white, 'center', true); }
+    else line(x - 64, ty + 14, x + 64, ty + 14, '#dfe6ec', 3);
+    const n = o.items.length, sp = n > 3 ? 37 : 46, sc = n > 3 ? 0.42 : 0.52, iy = ty + (o.delivery ? 58 : 50);
+    o.items.forEach((it, k) => {
+      const ix = x + (k - (n - 1) / 2) * sp;
+      ctx.globalAlpha = it.done ? 0.3 * a : a; drawItem(it.id, ix, iy, sc); ctx.globalAlpha = a;
+      if (it.done) poly([ix - 12, iy, ix - 3, iy + 10, ix + 14, iy - 12], null, C.green, 6, false);
+    });
+    bar(x - 68, ty + 84, 136, 16, fr, fr > 0.6 ? C.green : fr > 0.28 ? C.sunD : C.cherry);
+    ctx.globalAlpha = 1;
+    zone('slot' + i, x - 86, 168, 172, 300);
+  });
+  // 손님의 한마디
+  const sayBubble = (txt, x, y, a) => {
+    const lines = wrap(txt, 250, 20, true).slice(0, 2); setFont(20, true);
+    const tw = Math.max(...lines.map(l => ctx.measureText(l).width)) + 32, bx = clamp(x, tw / 2 + 8, W - tw / 2 - 8), bh = lines.length * 26 + 16;
+    ctx.globalAlpha = a; panel(bx - tw / 2, y - bh / 2, tw, bh, 16, C.white, C.white, { shadow: 3, lip: false });
+    lines.forEach((l, j) => text(l, bx, y + (j - (lines.length - 1) / 2) * 26, 20, C.ink, 'center', true)); ctx.globalAlpha = 1;
+  };
+  d.orders.forEach((o, i) => { if (o && o.say) sayBubble(o.say.text, 96 + i * 176, 322, clamp(o.say.t * 2, 0, 1)); });
+  d.ghosts.forEach(gh => { if (gh.word) sayBubble(gh.word, gh.x, 330 - gh.t * 24, clamp((1.6 - gh.t) * 2, 0, 1)); });
+  // 카운터와 간판
+  panel(-6, 462, W + 12, 88, 0, C.wood, C.woodD, { shadow: 0 }); fillRect(-6, 462, W + 12, 14, '#ffc98a'); line(-6, 476, W + 6, 476, C.ink, 4);
+  panel(250, 488, 220, 48, 14, C.white, C.paper, { shadow: 3 }); text('GOLDEN BUN', 360, 513, 22, C.cherryD, 'center', true);
+  drawBunny(224, 520, 0.42); drawBunny(496, 520, 0.42);
+  drawChibi(d.partner, 648, 552 - (d.bubble.t > 0 ? Math.abs(Math.sin(t * 9)) * 7 : 0), 104); // 카운터에 선 파트너
+  // 완성 선반
+  panel(-6, 550, W + 12, 92, 0, '#f4f6fc', C.steel, { shadow: 0, lip: false });
+  text('완성', 42, 596, 22, C.ink, 'center', true);
+  const shown = ITEMS.filter(itemOpen), gap = Math.min(122, 600 / shown.length);
+  shown.forEach((id, i) => {
+    const x = 120 + i * gap, n = d.shelf[id], k = 1 + 0.5 * clamp((d.pop[id] || 0) / 0.3, 0, 1);
+    ctx.globalAlpha = n ? 1 : 0.28; drawItem(id, x, 592, 0.7 * (n ? k : 1)); ctx.globalAlpha = 1;
+    ell(x + 38, 614, 17, 17, n ? C.cherry : '#8b98a5', C.ink, 3); textO(String(n), x + 38, 615, 20, C.white, C.ink, 4);
+  });
+  // 파트너
+  fillRect(0, 642, W, 110, C.white); fillRect(0, 642, W, 4, '#dfe6ec');
+  zone('help', 8, 646, 312, 102);
+  drawPortrait(d.partner, d.shake > 0 ? 'annoyed' : peak ? 'flustered' : d.bubble.t > 0 ? 'happy' : 'work', 12, 650, 124, 96, null, { shadow: 3, r: 16, zoom: 1.0 });
+  text(`${cr.name}  ${relOf(d.partner).e}`, 150, 666, 24, C.ink, 'left', true);
+  text(d.ptask ? `${JOB_NAMES[d.ptask.id]} 준비 중` : cr.station.split(' · ')[0], 150, 694, 20, C.ink2, 'left');
+  if (d.help >= 1) { // 다 찬 도움 게이지는 버튼이 된다
+    const k = 1 + 0.05 * Math.sin(t * 9);
+    ctx.save(); ctx.translate(233, 727); ctx.scale(k, k); ctx.translate(-233, -727);
+    btn('help', 146, 708, 174, 38, C.pink, '#f0609a', () => { drawHeart(168, 727, 0.7, C.white); textO('도와줘요!', 244, 728, 22, C.white, '#a8346a', 5); }, { r: 19, shadow: 3 });
+    ctx.restore();
+  } else { drawHeart(160, 727, 0.7); bar(178, 717, 136, 20, d.help, C.pink, '#f3e3ea'); }
+  if (d.chat) { // 잡담: 질문과 대답 두 개
+    const c = d.chat, k = easeBack(c.age / 0.22);
+    at(517, 697, k, () => { panel(-191, -49, 382, 98, 18, '#fff3f8', C.white, { shadow: 4, lip: false, stroke: C.pink }); text(c.q, 0, -28, 20, C.ink, 'center', true); bar(-170, -12, 340, 6, c.t / tune.chatTime, C.pink, '#f6dbe7'); });
+    c.a.forEach((o, j) => btn('chat' + j, 334 + j * 188, 700, 180, 42, C.white, C.white, () => text(o[0], 424 + j * 188, 721, 20, C.ink, 'center', true), { r: 14, shadow: 3 }));
+  } else if (d.bubble.t > 0) {
+    const k = easeBack(d.bubble.age / 0.22);
+    at(518, 697, k, () => {
+      panel(-188, -44, 376, 88, 20, C.white, C.white, { shadow: 4, gloss: false }); poly([-186, -10, -204, 0, -186, 10], C.white, null); line(-187, -10, -204, 0, '#c5d0db', 3); line(-204, 0, -187, 10, '#c5d0db', 3);
+      const lines = wrap(d.bubble.text, 344, 21, true).slice(0, 3);
+      lines.forEach((l, j) => text(l, 0, (j - (lines.length - 1) / 2) * 26, 21, C.ink, 'center', true));
+    });
+  }
+  // 작업 구역
+  checker(0, 752, W, H, 48, '#f1f5f8', '#e4ebf1'); fillRect(0, 752, W, 4, '#dfe6ec');
+  if (d.popup === 'burger') drawBurgerPopup(d);
+  else if (d.popup === 'cone') drawConePopup(d);
+  else {
+    const needs = BURGERS.reduce((s, id) => s + Math.max(0, demand(d, id) - d.shelf[id]), 0);
+    btn('open_burger', 20, 768, 446, 242, C.white, '#ffeeb8', () => {
+      panel(32, 780, 422, 40, 14, C.sunD, C.sunD, { shadow: 0 }); textO('버거 조립대', 243, 801, 24, C.white, C.ink, 5);
+      ell(150, 966, 96, 12, C.steelD);
+      if (d.stack.length) drawStack(d, 150, 960, 0.8); else drawItem('burger', 150, 912, 1.25);
+      text('터치해서 조립 시작', 340, 892, 22, C.ink, 'center', true);
+      text(`패티 ${d.patty}장`, 340, 926, 20, C.ink2, 'center', true);
+      if (needs) { const k = 1 + 0.08 * Math.sin(t * 8); at(340, 970, k, () => { panel(-76, -20, 152, 40, 20, C.cherry, C.cherryD, { shadow: 3 }); textO(`${needs}개 필요!`, 0, 1, 22, C.white, C.ink, 5); }); }
+    }, { r: 22 });
+    stationTile('grill', 480, 768, 220, 242, '그릴', C.cherry, 'patty', stationState(d, 'grill'));
+    stationTile('fry', 20, 1026, 220, 242, '프라이어', C.sunD, 'fries', stationState(d, 'fry'));
+    stationTile('drink', 250, 1026, 220, 242, '음료', C.mintD, 'drink', stationState(d, 'drink'));
+    stationTile('open_cone', 480, 1026, 220, 242, '콘 기계', C.pink, 'cone', stationState(d, 'cone'));
+  }
+  ctx.restore();
+  // HUD
+  fillRect(0, 0, W, 122, C.cherry);
+  const mins = sh.hour * 60 + Math.floor(d.time * tune.clockRate), hh = String(Math.floor(mins / 60) % 24).padStart(2, '0'), mm = String(mins % 60).padStart(2, '0');
+  panel(12, 10, 318, 50, 25, C.white, '#f3f6f9', { shadow: 3, lip: false });
+  text(`${sv.week}주차 ${sv.day}일 · ${sh.name}조 ${hh}:${mm}`, 171, 36, 21, C.ink, 'center', true);
+  const sc = rating(d), gr = gradeOf(sc);
+  drawStar(368, 35, 27, GRADE_COLOR[gr], -0.15); textO(gr, 368, 37, 24, C.white, C.ink, 5);
+  text(`${Math.round(sc)}점`, 426, 36, 21, C.white, 'center', true);
+  panel(470, 10, 170, 50, 25, C.white, '#f3f6f9', { shadow: 3, lip: false });
+  drawCoin(476, 35, 20); text(won(d.shown), 626, 36, 22, C.ink, 'right', true);
+  btn('pause', 652, 8, 56, 54, C.sun, C.sunD, () => { rr(668, 22, 9, 26, 3, C.ink, null); rr(684, 22, 9, 26, 3, C.ink, null); }, { r: 14, shadow: 3 });
+  staminaRow(26, 92, sv.stamina, 0.9);
+  // 하루 진행 막대: 피크 구간과 지금 위치
+  rr(166, 82, 538, 20, 10, 'rgba(38,28,80,0.35)', null);
+  const px = v => 169 + 532 * clamp(v / d.len, 0, 1);
+  [tune.peak1Start, tune.peak2Start].forEach(s => rr(px(s), 85, px(s + d.peakLen) - px(s), 14, 7, C.cherry, null));
+  rr(169, 85, Math.max(14, px(d.time) - 169), 14, 7, 'rgba(255,210,63,0.75)', null);
+  drawBunny(px(d.time), 90, 0.34);
+  // 목표
+  fillRect(0, 122, W, 36, peak ? '#ffe3e7' : C.white); fillRect(0, 156, W, 3, '#dfe6ec');
+  const tag = (x, w, label, c) => { rr(x, 127, w, 26, 13, c, null); text(label, x + w / 2, 141, 20, C.white, 'center', true); };
+  const p1 = tune.peak1Start, p2 = tune.peak2Start, tm = d.time;
+  const now = peak ? '지금: 피크타임 버티기!' : tm < p1 ? `지금: 피크타임까지 ${Math.ceil(p1 - tm)}초` : tm < p2 ? `지금: 피크타임까지 ${Math.ceil(p2 - tm)}초` : tm < d.len ? `지금: 마감까지 ${Math.ceil(d.len - tm)}초` : '지금: 남은 손님 응대하기';
+  tag(10, 58, '지금', peak ? C.cherryD : C.ink); text(now.slice(4), 76, 141, 20, C.ink, 'left', true);
+  tag(322, 58, '오늘', C.mintD); text('A 이상', 388, 141, 20, C.ink, 'left', true);
+  tag(470, 78, '이번 주', C.skyD); text(`${sv.day}/${tune.weekDays}일 · 클레임 ${d.lost}`, 556, 141, 20, C.ink, 'left', true);
+  // 알림
+  if (d.toast.t > 0) {
+    const k = easeBack(d.toast.age / 0.2) * clamp(d.toast.t / 0.2, 0, 1), col = { bad: [C.cherry, C.cherryD], good: [C.mintD, C.mintD], info: ['#33475b', C.ink] }[d.toast.kind];
+    setFont(22, true); const tw = Math.min(690, ctx.measureText(d.toast.text).width + 56);
+    at(360, d.popup ? 728 : 750, k, () => { panel(-tw / 2, -24, tw, 48, 24, col[0], col[1], { shadow: 4 }); textO(d.toast.text, 0, 1, 22, C.white, C.ink, 5); });
+  }
+  // 피크타임 배너
+  if (d.banner > 0) {
+    const p = 1 - d.banner / 1.6, bx = p < 0.2 ? (1 - easeOut(p / 0.2)) * W : p > 0.8 ? -((p - 0.8) / 0.2) * W : 0;
+    ctx.save(); ctx.translate(bx, 0);
+    panel(-20, 330, W + 40, 140, 0, C.cherry, C.cherryD, { shadow: 8 });
+    textO('피크타임!', 360, 386, 68, C.sun, C.ink, 12); textO('손님이 몰려와요', 360, 442, 24, C.white, C.ink, 5);
+    ctx.restore();
+  }
+  // 손 안내
+  const h = hintFor(d);
+  if (h && zoneRects[h]) {
+    const [x, y, w, hh2] = zoneRects[h], k = 4 + Math.sin(t * 8) * 4, lx = clamp(x + w / 2, 60, W - 60), ly = Math.max(190, y - 22 - k);
+    ctx.beginPath(); ctx.roundRect(x - k, y - k, w + k * 2, hh2 + k * 2, 22); ctx.strokeStyle = C.cherry; ctx.lineWidth = 7; ctx.stroke();
+    panel(lx - 50, ly - 20, 100, 40, 20, C.cherry, C.cherryD, { shadow: 3 }); textO('여기!', lx, ly + 1, 22, C.white, C.ink, 5);
+  }
+}
+
+// ---- Loop: fixed step, frame time clamped ---------------------------------------------
+let lastScene = null, fade = 0;
+function step() {
+  if (pressed('KeyM')) { setMuted(!muted); hit.delete('KeyM'); }
+  const sc = scenes[scene];
+  while (taps.length) { // 탭은 마지막으로 그린 화면의 영역으로 판정
+    const p = taps.shift();
+    for (let i = zones.length - 1; i >= 0; i--) {
+      const z = zones[i];
+      if (z.scene === scene && p.x >= z.x && p.x <= z.x + z.w && p.y >= z.y && p.y <= z.y + z.h) { press[z.id] = 0.16; scenes[scene].act(z.id); break; }
+    }
+  }
+  for (const code in sc.keys) if (scene === sc.name && pressed(code)) { press[sc.keys[code]] = 0.16; scenes[scene].act(sc.keys[code]); }
+  scenes[scene].update(STEP); hit.clear();
+  updateFx(STEP);
+  if (scene !== lastScene) {
+    const pausing = (lastScene === 'play' && scene === 'pause') || (lastScene === 'pause' && scene === 'play');
+    fade = pausing ? 0 : 1; lastScene = scene; state.sceneT = 0;
+  } else state.sceneT += STEP;
+  if (fade > 0) fade = Math.max(0, fade - STEP * 3.5);
+}
+for (const k in scenes) scenes[k].name = k;
+let last, acc = 0, ALPHA = 1;
+function tick() {
+  const now = clock.now();
+  acc += Math.min(now - last, 0.25); last = now;
+  while (acc >= STEP) { step(); acc -= STEP; }
+  ALPHA = acc / STEP;
+  drawFrame();
+}
+function drawFrame() {
+  if (!JUA && document.fonts && document.fonts.check('20px Jua')) JUA = true;
+  zones = []; zoneRects = {};
+  scenes[scene].draw();
+  drawFx();
+  if (fade > 0) { ctx.globalAlpha = fade * fade; clear(C.sun); ctx.globalAlpha = 1; } // 화면이 바뀔 때 노란빛으로 넘어간다
+  nameInput.style.display = scene === 'title' ? 'block' : 'none';
+}
+function frame() { tick(); requestAnimationFrame(frame); }
+function timer() { if (document.visibilityState === 'visible' && clock.now() - last > 0.1) tick(); }
+
+// ---- What a check can read and drive (?manual=1 stops the loop; players never see it) ----
+window.game = {
+  get scene() { return scene; },
+  get state() { return state; },
+  press(code) { hit.add(code); },
+  hold(code, on) { on ? down.add(code) : down.delete(code); },
+  get events() { return events; },
+  step(n = 1, draw = true, alpha = 1) {
+    for (let i = 0; i < n; i++) step();
+    if (draw) { ALPHA = alpha; drawFrame(); }
+  },
+};
+
+if (document.fonts && document.fonts.load) { document.fonts.load('20px Jua').catch(() => {}); document.fonts.load('20px "GB Title"', '골든번').catch(() => {}); } // 전용 폰트를 미리 불러 둔다
+if (window.ART) { // 스탠딩과 CG를 시작할 때 미리 불러 둔다
+  for (const id in ART.crew) for (const k in ART.crew[id]) getImg(ART.crew[id][k]);
+  for (const k in ART.cg) getImg(ART.cg[k]);
+  for (const k in (ART.chibi || {})) getImg(ART.chibi[k]);
+  for (const k in (ART.img || {})) getImg(ART.img[k]);
+  for (const k in (ART.bg || {})) getImg(ART.bg[k]);
+}
+reset();
+scene = params.get('scene') || 'title';
+lastScene = scene;
+last = clock.now();
+if (params.get('manual') === '1') drawFrame();
+else { requestAnimationFrame(frame); setInterval(timer, 50); }
+</script>
+</body>
+</html>

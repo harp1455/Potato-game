@@ -1,0 +1,28 @@
+L1	pass	evidence/play.png	굵은 먹선, 노랑·빨강·크림·갈색, 버니 로고, 영수증 모양 주문표, 관계 이모지. 스탠딩 슬롯은 evidence/pick.png
+L2	pass	evidence/pick.png	가로 3:2 스탠딩 슬롯(config.js ART), 메인 프롬프트의 크루·메뉴·HUD 기호를 story.js와 화면에 반영
+L3	pass	evidence/play.png	세로 9:16 고정 한 화면, 넓은 창에서는 가운데 표시
+F1	pass	index.html:425	번·패티·치즈 조립, 프라이어 타이머, 콘 게이지, 세트 주문(index.html:376)
+F2	pass	evidence/play.png	피크타임 표시와 주문 4장. 피크 구간은 index.html:367
+F3	pass	evidence/pick.png	근무 전 선택, 맡은 구역 자동 처리(index.html:478), 근무 중 말풍선(evidence/play.png)
+F4	pass	evidence/settle.png	등급, 점수, 매출 내역, 체력, 호감도
+F5	pass	evidence/event.png	크루당 3개(story.js), 선택지 3개, A 이상이면 bonus 장면(index.html:592)
+F6	pass	evidence/pick.png	관계 이모지와 속마음 한 줄. 근무 중 파트너 칸에도 이모지 표시
+F7	pass	evidence/play.png	지금/오늘/이번 주 목표 줄. 하루 끝 저장은 index.html:606
+F8	pass	index.html:390	초코콘 손님과 '감자 닮았다' 손님, 파트너의 대답(story.js work.choco, work.potato)
+S1	pass	evidence/settle.png	점수와 D~S 등급(index.html:374)
+S2	pass	index.html:345	호감도 누적과 관계 단계 4개
+S3	pass	evidence/event.png	정산 뒤 파트너와의 이벤트
+S4	pass	index.html:364	하루마다 닳고, 낮으면 조리가 느려지고, 선택지로 회복. 가장 단순한 형태
+S5	pass	index.html:832	일차별 근무조 이름, 시작 시각, 매장 빛. 가장 단순한 형태(선택 불가)
+M1	pass	index.html:664	이름 입력 뒤 성도의 환영 대사(story.js intro)
+M2	pass	index.html:498	첫 주문은 골든번버거, 다음에 누를 곳에 빨간 테두리와 '여기!' 표시
+M3	pass	index.html:420	제공하면 손님 자리에서 금액이 떠오름
+M4	pass	index.html:379	두 번째 주문은 세트
+M5	pass	evidence/play.png	프라이어 진행 막대. 민준이 파트너인 날은 민준이 프라이어를 맡아 직접 누르지 않음
+M6	pass	index.html:402	첫날 세트의 음료는 파트너가 내 주며 한마디
+C1	pass	index.html:367	peak1Start 55초, peak2Start 105초
+C2	pass	evidence/play.png	피크 중 주문표 4장, 인내심은 patiencePeak로 짧아짐
+C3	pass	index.html:533	놓친 손님은 클레임으로 집계되어 점수가 내려감
+C4	pass	evidence/settle.png	손님을 거의 놓쳐도 하루가 끝나고 D 평가만 남음
+C5	pass	index.html:384	2일차 콘, 3일차 더블치즈번 추가. 피크 길이는 peakLenGrow만큼 증가(index.html:358)
+C6	pass	config.js:13	수치는 전부 config.js에 있고 플레이 후 조정 대상

@@ -1,0 +1,85 @@
+time	2026-11-25 18:58:06
+keep	lines	0	pinned	0
+checklist	L1	unlisted	-	Look: 굵은 먹선과 셀 채색의 만화풍. 골든번의 노랑(브랜드, 버튼), 빨강(경고, 피크타임), 크림색 타일(바닥, 배경), 짙은 갈색(선, 글자). 손님과 음식은 둥글고 두툼한 형태로 그리고, 얼굴과 음식에 디테일을 모은다. 시그니처는 번 모양 토끼 '버니' 로고와 주문표 영수증 롤. 크루 스탠딩은 가로 3:2 이미지 슬롯으로 두고, 이미지가 없으면 실루엣과 이름표를 표시. every figure drawn, no emoji, no plain circles. 단, 관계 이모지(🫡☺️😳 등)는 원작 표기대로 emoji를 사용한다.	
+checklist	L2	unlisted	-	References: references/ 의 첨부 스탠딩 5장(그림체, 슬롯 비율), 크랙 메인 프롬프트(세계관, 크루, 메뉴, HUD)	
+checklist	L3	unlisted	-	View: 2D · Camera: 고정, 세로 9:16 한 화면. PC는 같은 화면을 가운데에 표시.	
+checklist	F1	unlisted	-	손맛 조립: 골든번버거, 더블치즈번, 감자튀김(타이머), 아이스크림 콘, 세트	
+checklist	F2	unlisted	-	하루 두 번의 피크타임과 한산한 시간	
+checklist	F3	unlisted	-	파트너 크루 2명(성도, 민준 *(provisional)*): 근무 전에 선택, 한 구역 자동 담당, 근무 중 한마디	
+checklist	F4	unlisted	-	정산 화면: ⭐ D~S, 매출 내역, 💪, 호감도	
+checklist	F5	unlisted	-	마감 후 이벤트: 크루당 3개(날마다 1개), 선택지 2~3개, ⭐ 높으면 추가 장면	
+checklist	F6	unlisted	-	관계 이모지 HUD와 속마음 한 줄	
+checklist	F7	unlisted	-	지금/오늘/이번 주 목표 표시, 하루 단위 자동 저장	
+checklist	F8	unlisted	-	초코콘을 찾는 손님 등 메인 프롬프트의 개그 손님	
+checklist	S1	unlisted	-	근무평가 ⭐ · in the slice	
+checklist	S2	unlisted	-	호감도와 관계 이모지 · in the slice	
+checklist	S3	unlisted	-	마감 후 이벤트 · in the slice	
+checklist	S4	unlisted	-	💪 체력 · thin stand-in *(guessed)*	
+checklist	S5	unlisted	-	근무조(오픈/미들/마감/야간) · thin stand-in *(guessed)*	
+checklist	M1	unlisted	-	이름을 입력하면 성도가 한 줄로 맞이한다.	
+checklist	M2	unlisted	-	첫 손님의 주문표(골든번버거)가 뜨고, 반짝이는 재료를 번→패티→번 순서로 탭해 쌓아 주문표에 낸다.	
+checklist	M3	unlisted	-	돈이 계산대에서 튀어 오른다.	
+checklist	M4	unlisted	-	두 번째 손님은 세트 주문이다.	
+checklist	M5	unlisted	-	프라이어를 탭해 감자를 넣으면 타이머가 돈다.	
+checklist	M6	unlisted	-	그 사이 파트너 크루가 음료를 대신 내주며 한마디 한다.	
+checklist	C1	unlisted	-	근무 시작 약 1분 뒤 첫 피크타임, 후반에 두 번째 피크타임이 온다.	
+checklist	C2	unlisted	-	피크 때는 주문표가 3~4장 겹치고 손님의 인내심이 줄어든다.	
+checklist	C3	unlisted	-	놓친 손님은 클레임으로 ⭐을 깎는다.	
+checklist	C4	unlisted	-	실패는 없으며 하루는 반드시 끝나고 D~S 평가만 남는다.	
+checklist	C5	unlisted	-	날이 갈수록 메뉴가 하나씩 늘고 피크가 길어진다.	
+checklist	C6	unlisted	-	*(provisional: 수치)*	
+browser	HeadlessChrome/158.0.0.0
+scene	play	0	title
+scene	play	1	event
+scene	play	497	pick
+scene	play	531	play
+digits	log	26px Pretendard, "Noto Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans CJK KR", sans-serif	tabular	0
+digits	log	22px Pretendard, "Noto Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans CJK KR", sans-serif	tabular	0
+digits	log	20px Pretendard, "Noto Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans CJK KR", sans-serif	tabular	0
+digits	log	bold 24px Pretendard, "Noto Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans CJK KR", sans-serif	tabular	0
+digits	log	bold 20px Pretendard, "Noto Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans CJK KR", sans-serif	tabular	0
+digits	log	bold 26px Pretendard, "Noto Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans CJK KR", sans-serif	tabular	0
+measure	step-time	play	0.007	0.900	1098
+lane	play	stop	18.3	220
+uncaught	play	0
+text	play	canvas	584,85,696,97	23.6	9.00	inside	GOLDEN BUN
+text	play	canvas	587,270,594,279	19.4	5.32	inside	2
+text	play	canvas	686,270,693,280	19.4	5.32	inside	3
+text	play	canvas	785,270,793,279	19.4	5.32	inside	4
+text	play	canvas	450,314,474,326	17.7	9.34	inside	완성
+text	play	canvas	528,323,543,333	19.4	3.75	inside	×0
+text	play	canvas	597,323,612,333	19.4	3.75	inside	×0
+text	play	canvas	665,323,680,332	19.4	9.34	inside	×1
+text	play	canvas	507,355,534,368	19.4	13.20	inside	성도
+text	play	canvas	508,376,570,387	16.0	5.32	inside	음료·콘 담당
+text	play	canvas	507,388,521,402	16.0	13.20	inside	🫡
+text	play	canvas	524,418,559,430	17.7	9.34	inside	조립대
+text	play	canvas	504,489,580,501	17.7	4.95	inside	번부터 쌓아요
+text	play	canvas	718,419,754,431	17.7	14.31	inside	레시피
+text	play	canvas	683,442,744,453	17.7	14.31	inside	골든번버거
+text	play	canvas	684,458,747,468	16.0	5.77	inside	번 · 패티 · 번
+text	play	canvas	490,591,499,602	16.0	9.00	inside	번
+text	play	canvas	572,591,611,603	16.0	9.00	inside	패티 ×3
+text	play	canvas	657,591,719,603	16.0	10.72	inside	치즈 (3일차)
+text	play	canvas	769,591,801,603	16.0	14.31	inside	버리기
+text	play	canvas	483,624,506,636	17.7	14.31	inside	그릴
+text	play	canvas	466,695,523,706	16.0	5.77	inside	눌러서 굽기
+text	play	canvas	567,624,615,636	17.7	14.31	inside	프라이어
+text	play	canvas	568,695,615,706	16.0	5.77	inside	튀기는 중
+text	play	canvas	677,624,700,636	17.7	10.72	inside	음료
+text	play	canvas	664,695,712,706	16.0	4.32	inside	성도 담당
+text	play	canvas	780,624,791,636	17.7	10.72	inside	콘
+text	play	canvas	759,695,810,706	16.0	4.32	inside	2일차부터
+text	play	canvas	449,10,573,23	19.4	14.31	inside	1일차 · 미들조 11:18
+text	play	canvas	449,32,470,42	16.0	13.20	inside	체력
+text	play	canvas	629,20,639,31	20.3	9.00	inside	S
+text	play	canvas	656,19,690,32	19.4	14.31	inside	100점
+text	play	canvas	736,10,786,24	20.3	9.00	inside	₩6,000
+text	play	canvas	744,32,786,42	16.0	13.20	inside	클레임 0
+text	play	canvas	447,58,547,69	16.0	10.01	inside	지금: 피크까지 46초
+text	play	canvas	643,59,705,69	16.0	9.23	inside	오늘: A 이상
+text	play	canvas	764,59,832,69	16.0	9.23	inside	이번 주: 1/3일
+text	play	canvas	478,89,505,101	17.7	4.16	inside	여기!
+screen	play	drawn
+shot	play	prototypes/golden-bun/evidence/play.png
+responds	changed	714

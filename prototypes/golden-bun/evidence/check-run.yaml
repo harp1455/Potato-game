@@ -1,0 +1,151 @@
+# The one-shot's small check (check-run/1).
+# Written by one-shot-check.sh --record: the results are /prototype's reading of
+# evidence/self-check.tsv; never edited by hand.
+kind: check-run/1
+engine: web
+browser: "HeadlessChrome/158.0.0.0"
+time: "2026-11-25 18:58:06"
+checks:
+  - id: boots
+    result: pass
+    evidence:
+      - "evidence/self-check.tsv"
+  - id: shot
+    result: pass
+    evidence:
+      - "evidence/play.png"
+  - id: outlines
+    result: pass
+    evidence:
+      - "evidence/figures.png"
+  - id: brief-words
+    result: pass
+    evidence:
+      - "evidence/brief-words.tsv"
+  - id: emoji
+    result: pass
+    evidence:
+      - "evidence/self-check.tsv"
+  - id: nearest-game
+    result: pass
+    evidence:
+      - "evidence/nearest-game.txt"
+brief_checklist:
+  - id: L1
+    result: pass
+    evidence: "evidence/play.png"
+    item: "Look: 굵은 먹선과 셀 채색의 만화풍. 골든번의 노랑(브랜드, 버튼), 빨강(경고, 피크타임), 크림색 타일(바닥, 배경), 짙은 갈색(선, 글자). 손님과 음식은 둥글고 두툼한 형태로 그리고, 얼굴과 음식에 디테일을 모은다. 시그니처는 번 모양 토끼 '버니' 로고와 주문표 영수증 롤. 크루 스탠딩은 가로 3:2 이미지 슬롯으로 두고, 이미지가 없으면 실루엣과 이름표를 표시. every figure drawn, no emoji, no plain circles. 단, 관계 이모지(🫡☺️😳 등)는 원작 표기대로 emoji를 사용한다."
+  - id: L2
+    result: pass
+    evidence: "evidence/pick.png"
+    item: "References: references/ 의 첨부 스탠딩 5장(그림체, 슬롯 비율), 크랙 메인 프롬프트(세계관, 크루, 메뉴, HUD)"
+  - id: L3
+    result: pass
+    evidence: "evidence/play.png"
+    item: "View: 2D · Camera: 고정, 세로 9:16 한 화면. PC는 같은 화면을 가운데에 표시."
+  - id: F1
+    result: pass
+    evidence: "index.html:425"
+    item: "손맛 조립: 골든번버거, 더블치즈번, 감자튀김(타이머), 아이스크림 콘, 세트"
+  - id: F2
+    result: pass
+    evidence: "evidence/play.png"
+    item: "하루 두 번의 피크타임과 한산한 시간"
+  - id: F3
+    result: pass
+    evidence: "evidence/pick.png"
+    item: "파트너 크루 2명(성도, 민준 *(provisional)*): 근무 전에 선택, 한 구역 자동 담당, 근무 중 한마디"
+  - id: F4
+    result: pass
+    evidence: "evidence/settle.png"
+    item: "정산 화면: ⭐ D~S, 매출 내역, 💪, 호감도"
+  - id: F5
+    result: pass
+    evidence: "evidence/event.png"
+    item: "마감 후 이벤트: 크루당 3개(날마다 1개), 선택지 2~3개, ⭐ 높으면 추가 장면"
+  - id: F6
+    result: pass
+    evidence: "evidence/pick.png"
+    item: "관계 이모지 HUD와 속마음 한 줄"
+  - id: F7
+    result: pass
+    evidence: "evidence/play.png"
+    item: "지금/오늘/이번 주 목표 표시, 하루 단위 자동 저장"
+  - id: F8
+    result: pass
+    evidence: "index.html:390"
+    item: "초코콘을 찾는 손님 등 메인 프롬프트의 개그 손님"
+  - id: S1
+    result: pass
+    evidence: "evidence/settle.png"
+    item: "근무평가 ⭐ · in the slice"
+  - id: S2
+    result: pass
+    evidence: "index.html:345"
+    item: "호감도와 관계 이모지 · in the slice"
+  - id: S3
+    result: pass
+    evidence: "evidence/event.png"
+    item: "마감 후 이벤트 · in the slice"
+  - id: S4
+    result: pass
+    evidence: "index.html:364"
+    item: "💪 체력 · thin stand-in *(guessed)*"
+  - id: S5
+    result: pass
+    evidence: "index.html:832"
+    item: "근무조(오픈/미들/마감/야간) · thin stand-in *(guessed)*"
+  - id: M1
+    result: pass
+    evidence: "index.html:664"
+    item: "이름을 입력하면 성도가 한 줄로 맞이한다."
+  - id: M2
+    result: pass
+    evidence: "index.html:498"
+    item: "첫 손님의 주문표(골든번버거)가 뜨고, 반짝이는 재료를 번→패티→번 순서로 탭해 쌓아 주문표에 낸다."
+  - id: M3
+    result: pass
+    evidence: "index.html:420"
+    item: "돈이 계산대에서 튀어 오른다."
+  - id: M4
+    result: pass
+    evidence: "index.html:379"
+    item: "두 번째 손님은 세트 주문이다."
+  - id: M5
+    result: pass
+    evidence: "evidence/play.png"
+    item: "프라이어를 탭해 감자를 넣으면 타이머가 돈다."
+  - id: M6
+    result: pass
+    evidence: "index.html:402"
+    item: "그 사이 파트너 크루가 음료를 대신 내주며 한마디 한다."
+  - id: C1
+    result: pass
+    evidence: "index.html:367"
+    item: "근무 시작 약 1분 뒤 첫 피크타임, 후반에 두 번째 피크타임이 온다."
+  - id: C2
+    result: pass
+    evidence: "evidence/play.png"
+    item: "피크 때는 주문표가 3~4장 겹치고 손님의 인내심이 줄어든다."
+  - id: C3
+    result: pass
+    evidence: "index.html:533"
+    item: "놓친 손님은 클레임으로 ⭐을 깎는다."
+  - id: C4
+    result: pass
+    evidence: "evidence/settle.png"
+    item: "실패는 없으며 하루는 반드시 끝나고 D~S 평가만 남는다."
+  - id: C5
+    result: pass
+    evidence: "index.html:384"
+    item: "날이 갈수록 메뉴가 하나씩 늘고 피크가 길어진다."
+  - id: C6
+    result: pass
+    evidence: "config.js:13"
+    item: "*(provisional: 수치)*"
+measures:
+  - id: step-time
+    value: 0.900
+    unit: ms
+    by: browser
+    detail: "mean 0.007 ms, slowest 0.900 ms, 1098 steps"
