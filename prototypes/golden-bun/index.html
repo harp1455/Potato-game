@@ -10,9 +10,10 @@
 <style>
   html, body { margin: 0; height: 100%; background: #1c1533; overflow: hidden; }
   body { font-variant-numeric: tabular-nums; }
+  @font-face { font-family: 'Jua'; src: url('assets/fonts/Jua-Regular.woff2') format('woff2'); font-display: swap; }
   canvas { display: block; margin: 0 auto; touch-action: none; }
   #nm { position: fixed; display: none; box-sizing: border-box; text-align: center; border: 4px solid #2a2146;
-        border-radius: 16px; background: #ffffff; color: #2a2146; outline: none; padding: 0; font-weight: 800; }
+        border-radius: 16px; background: #ffffff; color: #2a2146; outline: none; padding: 0; font-family: 'Jua', sans-serif; }
 </style>
 </head>
 <body>
@@ -28,7 +29,7 @@ const tune = new Proxy({}, { get: (_, k) => CONFIG[k].value }); // live: tune.sp
 const STEP = 1 / 60;            // simulation step in seconds
 const W = 720, H = 1280;        // logical size: 세로 9:16
 const PIXEL = false;
-const FONT = '"Pretendard","SUIT","Noto Sans KR","Apple SD Gothic Neo","Malgun Gothic","Noto Sans CJK KR",sans-serif';
+const FONT = '"Jua","Pretendard","SUIT","Noto Sans KR","Apple SD Gothic Neo","Malgun Gothic","Noto Sans CJK KR",sans-serif';
 const TITLE = '골든번 이태원역점';
 const clock = window.GAME_CLOCK || { now: () => performance.now() / 1000 }; // a check may inject one
 const CHEAP = params.get('render') === 'cheap';
@@ -190,7 +191,7 @@ function startDay(partner) {
     shelf: zero(), pop: {}, patty: tune.pattyStart, stack: [],
     grill: 0, fry: { s: 'idle', t: 0 }, drink: 0, cone: { tier: 0, phase: rng(), tiers: [], res: null, resT: 0 },
     popup: null, popT: 0, peek: 0, ptask: null, bubble: { text: STORY.crew[partner].work.start, t: 4, age: 0 }, toast: { text: '', t: 0, kind: 'info', age: 0 },
-    wasPeak: false, banner: 0, tutorial: totalDay(sv) === 1, shake: 0,
+    wasPeak: false, banner: 0, tutorial: totalDay(sv) === 1, shake: 0, help: 0, helpTold: false, helped: 0,
     slow: (sv.stamina <= tune.staminaLow ? tune.tiredSlow : 1) * (perks.stationMul || 1),
   };
 }
@@ -358,6 +359,25 @@ function partnerWork(d, dt) { // 파트너가 맡은 구역을 알아서 채운�
   else if (runs(d, 'cone') && isOpen('cone') && d.shelf.cone < Math.min(tune.coneMax, Math.max(1, demand(d, 'cone')))) id = 'cone';
   if (id) d.ptask = { id, t: tune.partnerTask, max: tune.partnerTask };
 }
+function doHelp(d, auto) { // 파트너가 가장 급한 주문의 메뉴를 만들어 준다
+  const cr = STORY.crew[d.partner];
+  if (d.help < 1) { if (!auto) note(d, '게이지가 차면 파트너가 도와줘요'); return; }
+  let bi = -1, bf = 2;
+  d.orders.forEach((o, i) => { if (o && !ready(d, o) && o.pat / o.patMax < bf) { bf = o.pat / o.patMax; bi = i; } });
+  if (bi < 0) { if (!auto) note(d, '지금은 도울 주문이 없어요'); return; }
+  const o = d.orders[bi], lim = tune.helpItems + (relIdx(state.save.aff[d.partner]) >= 2 ? 1 : 0), have = { ...d.shelf };
+  let n = 0;
+  for (const it of o.items) {
+    if (it.done) continue;
+    if (have[it.id] > 0) { have[it.id]--; continue; }
+    if (n >= lim) break;
+    addShelf(d, it.id); n++;
+  }
+  o.pat = Math.min(o.patMax, o.pat + tune.helpPatience);
+  d.help = 0; d.helped++; say(d, 'help'); sfx.serve(); events.push('help');
+  note(d, `${cr.name}의 도움! 메뉴 ${n}개가 준비됐어요`, 'good');
+  burst('star', 62, 696, 8); burst('heart', 96 + bi * 176, 330, 4, { g: -120, up: 120 });
+}
 function hintFor(d) { // 첫날 첫 주문들: 다음에 누를 곳
   if (!d.tutorial || d.n >= tune.tutorialOrders) return null;
   let oi = -1;
@@ -420,6 +440,11 @@ function updateDay(d, dt) {
   if (c.res) { c.resT -= dt; if (c.resT <= 0) { c.res = null; c.tier = 0; c.tiers = []; c.phase = rng(); } }
   else if (d.popup === 'cone') c.phase += coneSpeed(d) * dt;
   partnerWork(d, dt);
+  // 도움 게이지
+  if (d.help < 1) {
+    d.help = Math.min(1, d.help + dt / tune.helpCharge * (1 + tune.helpRelBonus * relIdx(sv.aff[d.partner])) * (peak ? tune.helpPeakMul : 1));
+    if (d.help >= 1 && !d.helpTold) { d.helpTold = true; note(d, '도움 게이지가 찼어요. 파트너를 터치해 보세요!', 'good'); }
+  } else if (d.orders.some(o => o && !ready(d, o) && o.pat / o.patMax < tune.helpAuto)) doHelp(d, true);
   // 화면 타이머
   for (const s of d.stack) s.age += dt;
   for (const id in d.pop) if (d.pop[id] > 0) d.pop[id] -= dt;
@@ -543,7 +568,7 @@ function btn(id, x, y, w, h, c1, c2, draw, o = {}) { // 눌리면 살짝 들어�
   zone(id, x, y, w, h);
 }
 function labelBtn(id, x, y, w, h, label, c1, c2, size = 30, white = true) {
-  btn(id, x, y, w, h, c1, c2, () => { if (white) textO(label, x + w / 2, y + h / 2 + 1, size, C.white, C.ink, 6); else text(label, x + w / 2, y + h / 2 + 1, size, C.ink, 'center', true); }, { r: 22 });
+  btn(id, x, y, w, h, c1, c2, () => { if (white) textO(label, x + w / 2, y + h / 2 - 1, size, C.white, shade(c2, -0.5), 6); else text(label, x + w / 2, y + h / 2 + 1, size, C.ink, 'center', true); }, { r: 22 });
 }
 function staminaRow(x, y, n, s = 1) { for (let i = 0; i < 5; i++) drawBolt(x + i * 28 * s, y, s, i < n); }
 
@@ -555,7 +580,7 @@ function reset() {
   startDay('seongdo'); // ?scene=play 로 바로 열어도 근무가 돌아가게
 }
 function header(title, sub) {
-  ctx.fillStyle = vgrad(0, 140, '#3a2f66', C.ink); ctx.fillRect(0, 0, W, 140);
+  ctx.fillStyle = vgrad(0, 140, '#7d6bf0', '#5b49c9'); ctx.fillRect(0, 0, W, 140);
   fillRect(0, 136, W, 6, C.sun);
   textO(title, 360, sub ? 52 : 70, 38, C.white, C.ink, 8);
   if (sub) text(sub, 360, 104, 22, C.sun, 'center', true);
@@ -608,7 +633,7 @@ const scenes = {
       if (loadSave()) labelBtn('continue', 150, 980, 420, 90, '이어하기', C.white, C.steel, 32, false);
       text('주문을 확인하고, 만들고, 손님을 터치해 제공하세요', 360, 1150, 22, C.ink, 'center', true);
       text('근무 실패는 없어요. 하루가 끝나면 평가만 남습니다', 360, 1190, 22, C.ink);
-      text('PC: B 조립대 · Q~Y 재료 · A S D 구역 · F 콘 · 1~4 손님', 360, 1236, 20, C.ink);
+      text('PC: B 조립대 · Q~Y 재료 · A S D 구역 · F 콘 · H 도움 · 1~4 손님', 360, 1236, 20, C.ink);
     },
   },
   event: {
@@ -690,7 +715,7 @@ const scenes = {
   },
   play: {
     keys: { KeyB: 'open_burger', KeyF: 'open_cone', KeyA: 'grill', KeyS: 'fry', KeyD: 'drink', KeyQ: 'ing_bun', KeyW: 'ing_patty', KeyE: 'ing_cheese',
-      KeyR: 'ing_pickle', KeyT: 'ing_gold', KeyY: 'ing_ketchup', KeyG: 'trash', KeyX: 'close', KeyV: 'peek', Space: 'conedrop',
+      KeyR: 'ing_pickle', KeyT: 'ing_gold', KeyY: 'ing_ketchup', KeyG: 'trash', KeyX: 'close', KeyV: 'peek', KeyH: 'help', Space: 'conedrop',
       Digit1: 'slot0', Digit2: 'slot1', Digit3: 'slot2', Digit4: 'slot3', KeyP: 'pause', Escape: 'esc' },
     act(id) {
       const d = state.d;
@@ -701,6 +726,7 @@ const scenes = {
       else if (id === 'open_cone') openPopup(d, 'cone');
       else if (id === 'conedrop') { if (d.popup === 'cone') coneDrop(d); }
       else if (id === 'peek') { d.peek = tune.recipePeek; sfx.tap(); }
+      else if (id === 'help') doHelp(d, false);
       else if (id === 'trash') tapIngredient(d, 'trash');
       else if (id.startsWith('ing_')) { if (d.popup !== 'burger') { d.popup = 'burger'; d.popT = 0; } tapIngredient(d, id.slice(4)); }
       else tapStation(d, id);
@@ -980,7 +1006,7 @@ function drawPlay() {
   panel(250, 488, 220, 48, 14, C.white, C.paper, { shadow: 3 }); text('GOLDEN BUN', 360, 513, 22, C.cherryD, 'center', true);
   drawBunny(224, 520, 0.42); drawBunny(496, 520, 0.42);
   // 완성 선반
-  panel(-6, 550, W + 12, 92, 0, C.steel, C.steelD, { shadow: 0 });
+  panel(-6, 550, W + 12, 92, 0, '#f4f6fc', C.steel, { shadow: 0, lip: false });
   text('완성', 42, 596, 22, C.ink, 'center', true);
   const shown = ITEMS.filter(itemOpen), gap = Math.min(122, 600 / shown.length);
   shown.forEach((id, i) => {
@@ -989,21 +1015,27 @@ function drawPlay() {
     ell(x + 38, 614, 17, 17, n ? C.cherry : '#6f6792', C.ink, 3); textO(String(n), x + 38, 615, 20, C.white, C.ink, 4);
   });
   // 파트너
-  fillRect(0, 642, W, 110, C.paper); line(0, 642, W, 642, C.ink, 4);
+  fillRect(0, 642, W, 110, C.white); fillRect(0, 642, W, 4, '#d9d2f3');
+  zone('help', 8, 646, 312, 102);
   drawPortrait(d.partner, peak ? 'surprised' : d.bubble.t > 0 ? 'smile' : 'neutral', 14, 652, 96, 90, null, { shadow: 3, r: 14 });
-  text(cr.name, 124, 668, 24, C.ink, 'left', true);
-  text(d.ptask ? `${JOB_NAMES[d.ptask.id]} 준비 중` : cr.station.split(' · ')[0], 124, 698, 20, C.ink2, 'left', true);
-  text(`${relOf(d.partner).e} ${relOf(d.partner).label}`, 124, 726, 20, C.ink, 'left');
+  text(`${cr.name}  ${relOf(d.partner).e}`, 124, 666, 24, C.ink, 'left', true);
+  text(d.ptask ? `${JOB_NAMES[d.ptask.id]} 준비 중` : cr.station.split(' · ')[0], 124, 694, 20, C.ink2, 'left');
+  if (d.help >= 1) { // 다 찬 도움 게이지는 버튼이 된다
+    const k = 1 + 0.05 * Math.sin(t * 9);
+    ctx.save(); ctx.translate(215, 727); ctx.scale(k, k); ctx.translate(-215, -727);
+    btn('help', 122, 708, 186, 38, C.pink, '#f0609a', () => { drawHeart(146, 727, 0.7, C.white); textO('도와줘요!', 226, 728, 22, C.white, '#a8346a', 5); }, { r: 19, shadow: 3 });
+    ctx.restore();
+  } else { drawHeart(136, 727, 0.7); bar(154, 717, 150, 20, d.help, C.pink, '#f1e9fb'); }
   if (d.bubble.t > 0) {
     const k = easeBack(d.bubble.age / 0.22);
     at(518, 697, k, () => {
-      panel(-188, -44, 376, 88, 20, C.white, C.white, { shadow: 4, gloss: false }); poly([-188, -8, -206, 0, -188, 10], C.white, C.ink, 4, false);
+      panel(-188, -44, 376, 88, 20, C.white, C.white, { shadow: 4, gloss: false }); poly([-186, -10, -204, 0, -186, 10], C.white, null); line(-187, -10, -204, 0, '#b3a9e2', 3); line(-204, 0, -187, 10, '#b3a9e2', 3);
       const lines = wrap(d.bubble.text, 344, 21, true).slice(0, 3);
       lines.forEach((l, j) => text(l, 0, (j - (lines.length - 1) / 2) * 26, 21, C.ink, 'center', true));
     });
   }
   // 작업 구역
-  checker(0, 752, W, H, 48, '#e9f0ff', '#d9e4fd'); line(0, 752, W, 752, C.ink, 4);
+  checker(0, 752, W, H, 48, '#eef1ff', '#e1e6fd'); fillRect(0, 752, W, 4, '#d9d2f3');
   if (d.popup === 'burger') drawBurgerPopup(d);
   else if (d.popup === 'cone') drawConePopup(d);
   else {
@@ -1023,30 +1055,31 @@ function drawPlay() {
   }
   ctx.restore();
   // HUD
-  ctx.fillStyle = vgrad(0, 122, '#3a2f66', C.ink); ctx.fillRect(0, 0, W, 122);
+  ctx.fillStyle = vgrad(0, 122, '#7d6bf0', '#5b49c9'); ctx.fillRect(0, 0, W, 122);
   const mins = sh.hour * 60 + Math.floor(d.time * tune.clockRate), hh = String(Math.floor(mins / 60) % 24).padStart(2, '0'), mm = String(mins % 60).padStart(2, '0');
-  panel(12, 10, 318, 50, 25, '#544a86', '#463c76', { shadow: 0, stroke: '#7d72b5', lw: 3 });
-  text(`${sv.week}주차 ${sv.day}일 · ${sh.name}조 ${hh}:${mm}`, 171, 36, 21, C.white, 'center', true);
+  panel(12, 10, 318, 50, 25, C.white, '#f1ecff', { shadow: 3, lip: false });
+  text(`${sv.week}주차 ${sv.day}일 · ${sh.name}조 ${hh}:${mm}`, 171, 36, 21, C.ink, 'center', true);
   const sc = rating(d), gr = gradeOf(sc);
   drawStar(368, 35, 27, GRADE_COLOR[gr], -0.15); textO(gr, 368, 37, 24, C.white, C.ink, 5);
   text(`${Math.round(sc)}점`, 426, 36, 21, C.white, 'center', true);
-  panel(464, 10, 176, 50, 25, '#544a86', '#463c76', { shadow: 0, stroke: '#7d72b5', lw: 3 });
-  drawCoin(490, 35, 14); text(won(d.shown), 628, 36, 22, C.sun, 'right', true);
+  panel(470, 10, 170, 50, 25, C.white, '#f1ecff', { shadow: 3, lip: false });
+  drawCoin(476, 35, 20); text(won(d.shown), 626, 36, 22, C.ink, 'right', true);
   btn('pause', 652, 8, 56, 54, C.sun, C.sunD, () => { rr(668, 22, 9, 26, 3, C.ink, null); rr(684, 22, 9, 26, 3, C.ink, null); }, { r: 14, shadow: 3 });
   staminaRow(26, 92, sv.stamina, 0.9);
   // 하루 진행 막대: 피크 구간과 지금 위치
-  rr(166, 82, 538, 20, 10, '#544a86', '#7d72b5', 3);
+  rr(166, 82, 538, 20, 10, 'rgba(38,28,80,0.35)', null);
   const px = v => 169 + 532 * clamp(v / d.len, 0, 1);
   [tune.peak1Start, tune.peak2Start].forEach(s => rr(px(s), 85, px(s + d.peakLen) - px(s), 14, 7, C.cherry, null));
   rr(169, 85, Math.max(14, px(d.time) - 169), 14, 7, 'rgba(255,210,63,0.75)', null);
   drawBunny(px(d.time), 90, 0.34);
   // 목표
-  fillRect(0, 122, W, 36, peak ? (Math.floor(t * 4) % 2 ? '#ff8a6b' : C.sun) : '#fff0b8'); line(0, 158, W, 158, C.ink, 4);
+  fillRect(0, 122, W, 36, peak ? '#ffe3e7' : C.white); fillRect(0, 156, W, 3, '#d9d2f3');
+  const tag = (x, w, label, c) => { rr(x, 127, w, 26, 13, c, null); text(label, x + w / 2, 141, 20, C.white, 'center', true); };
   const p1 = tune.peak1Start, p2 = tune.peak2Start, tm = d.time;
   const now = peak ? '지금: 피크타임 버티기!' : tm < p1 ? `지금: 피크타임까지 ${Math.ceil(p1 - tm)}초` : tm < p2 ? `지금: 피크타임까지 ${Math.ceil(p2 - tm)}초` : tm < d.len ? `지금: 마감까지 ${Math.ceil(d.len - tm)}초` : '지금: 남은 손님 응대하기';
-  text(now, 14, 141, 20, C.ink, 'left', true);
-  text('오늘: A 이상', 404, 141, 20, C.ink, 'center', true);
-  text(`이번 주 ${sv.day}/${tune.weekDays}일 · 클레임 ${d.lost}`, 706, 141, 20, C.ink, 'right', true);
+  tag(10, 58, '지금', peak ? C.cherryD : '#6a58d6'); text(now.slice(4), 76, 141, 20, C.ink, 'left', true);
+  tag(322, 58, '오늘', C.mintD); text('A 이상', 388, 141, 20, C.ink, 'left', true);
+  tag(470, 78, '이번 주', '#d9488a'); text(`${sv.day}/${tune.weekDays}일 · 클레임 ${d.lost}`, 556, 141, 20, C.ink, 'left', true);
   // 알림
   if (d.toast.t > 0) {
     const k = easeBack(d.toast.age / 0.2) * clamp(d.toast.t / 0.2, 0, 1), col = { bad: [C.cherry, C.cherryD], good: [C.mintD, C.mintD], info: ['#544a86', C.ink] }[d.toast.kind];
@@ -1101,6 +1134,7 @@ function tick() {
   drawFrame();
 }
 function drawFrame() {
+  if (!JUA && document.fonts && document.fonts.check('20px Jua')) JUA = true;
   zones = []; zoneRects = {};
   scenes[scene].draw();
   drawFx();
@@ -1123,6 +1157,7 @@ window.game = {
   },
 };
 
+if (document.fonts && document.fonts.load) document.fonts.load('20px Jua').catch(() => {}); // 전용 폰트를 미리 불러 둔다
 reset();
 scene = params.get('scene') || 'title';
 lastScene = scene;

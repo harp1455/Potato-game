@@ -9,3 +9,16 @@
 #   date: 2026-01-31
 #   ships: true               # false for a file only the build uses
 #   placeholder: true         # until it is replaced; leave the line out otherwise
+- path: assets/fonts/Jua-Regular.woff2
+  origin: licensed
+  tool: "fontTools: Jua-Regular.ttf를 woff2로 변환"
+  source: {vendor: "Woowa Brothers (The Jua Project Authors)", product: "Jua (배달의민족 주아)", url: "https://github.com/google/fonts/tree/main/ofl/jua"}
+  licence: {id: OFL-1.1}
+  date: 2026-11-26
+  ships: true
+- path: assets/fonts/OFL.txt
+  origin: licensed
+  source: {vendor: "Woowa Brothers (The Jua Project Authors)", product: "Jua 라이선스 전문", url: "https://github.com/google/fonts/tree/main/ofl/jua"}
+  licence: {id: OFL-1.1}
+  date: 2026-11-26
+  ships: true

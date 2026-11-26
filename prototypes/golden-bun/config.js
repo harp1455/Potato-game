@@ -22,24 +22,24 @@ window.CONFIG = {
   dayDouble: { value: 3, min: 1, max: 30, step: 1 },         // 더블치즈번, 치즈, 케첩
   dayDelivery: { value: 4, min: 1, max: 30, step: 1 },       // 배달 주문 (라이더와 근무하면 첫날부터)
   dayCustom: { value: 5, min: 1, max: 30, step: 1 },         // '피클 빼기' 주문
-  recipeHintDays: { value: 3, min: 0, max: 30, step: 1 },    // 이 날까지는 조립대에 레시피가 계속 보인다
+  recipeHintDays: { value: 5, min: 0, max: 30, step: 1 },    // 이 날까지는 조립대에 레시피가 계속 보인다
   recipePeek: { value: 2.5, min: 0.5, max: 8, step: 0.5 },   // 그 뒤 '레시피 보기'를 누르면 보이는 시간 (초)
 
   // ---- 손님 ----
-  spawnCalm: { value: 7.5, min: 3, max: 20, step: 0.5 },     // 한산할 때 손님 간격 (초)
-  spawnPeak: { value: 3.2, min: 1.5, max: 10, step: 0.1 },   // 피크타임 손님 간격 (초)
-  weekSpawnMul: { value: 0.93, min: 0.7, max: 1, step: 0.01 },// 한 주 지날 때마다 손님 간격에 곱하는 값
+  spawnCalm: { value: 8.5, min: 3, max: 20, step: 0.5 },     // 한산할 때 손님 간격 (초)
+  spawnPeak: { value: 4.0, min: 1.5, max: 10, step: 0.1 },   // 피크타임 손님 간격 (초)
+  weekSpawnMul: { value: 0.95, min: 0.7, max: 1, step: 0.01 },// 한 주 지날 때마다 손님 간격에 곱하는 값
   weekSpawnFloor: { value: 0.6, min: 0.3, max: 1, step: 0.05 },// 손님 간격이 줄어드는 한계 (비율)
-  patienceCalm: { value: 34, min: 10, max: 80, step: 1 },    // 한산할 때 인내심 (초)
-  patiencePeak: { value: 27, min: 10, max: 80, step: 1 },    // 피크타임 인내심 (초)
-  patienceDayDrop: { value: 0.8, min: 0, max: 8, step: 0.1 },// 그 주 안에서 하루마다 줄어드는 인내심 (초)
-  patienceWeekDrop: { value: 1.5, min: 0, max: 8, step: 0.5 },// 한 주 지날 때마다 줄어드는 인내심 (초)
-  patienceMin: { value: 16, min: 6, max: 40, step: 1 },      // 인내심의 최저 (초)
+  patienceCalm: { value: 42, min: 10, max: 80, step: 1 },    // 한산할 때 인내심 (초)
+  patiencePeak: { value: 34, min: 10, max: 80, step: 1 },    // 피크타임 인내심 (초)
+  patienceDayDrop: { value: 0.5, min: 0, max: 8, step: 0.1 },// 그 주 안에서 하루마다 줄어드는 인내심 (초)
+  patienceWeekDrop: { value: 1, min: 0, max: 8, step: 0.5 },// 한 주 지날 때마다 줄어드는 인내심 (초)
+  patienceMin: { value: 20, min: 6, max: 40, step: 1 },      // 인내심의 최저 (초)
   fastFrac: { value: 0.4, min: 0.1, max: 0.9, step: 0.05 },  // 인내심이 이만큼 남았으면 '빠른 제공'
   slowQuality: { value: 0.75, min: 0.3, max: 1, step: 0.05 },// 느린 제공의 평가 비율
   gagChance: { value: 0.3, min: 0, max: 1, step: 0.05 },     // 콘 주문이 초코콘 손님일 확률
   potatoChance: { value: 0.07, min: 0, max: 0.5, step: 0.01 },// '감자 닮았다' 손님 확률
-  customChance: { value: 0.3, min: 0, max: 1, step: 0.05 },  // 골든번버거 주문이 '피클 빼기'일 확률
+  customChance: { value: 0.2, min: 0, max: 1, step: 0.05 },  // 골든번버거 주문이 '피클 빼기'일 확률
   tutorialOrders: { value: 2, min: 0, max: 4, step: 1 },     // 첫날에 손 안내를 해 주는 주문 수
   // 주문 종류의 비중 (클수록 자주)
   wBurger: { value: 4, min: 0, max: 10, step: 1 },           // 골든번버거 단품
@@ -50,7 +50,7 @@ window.CONFIG = {
   wDouble: { value: 2, min: 0, max: 10, step: 1 },           // 더블치즈번 단품
   wDoubleSet: { value: 2, min: 0, max: 10, step: 1 },        // 더블치즈번 세트
   // 배달
-  deliveryRate: { value: 0.16, min: 0, max: 0.8, step: 0.02 },// 주문이 배달일 확률
+  deliveryRate: { value: 0.12, min: 0, max: 0.8, step: 0.02 },// 주문이 배달일 확률
   deliveryPatience: { value: 1.4, min: 1, max: 3, step: 0.1 },// 배달 주문의 인내심 배율
   deliveryFee: { value: 1500, min: 0, max: 5000, step: 100 }, // 배달 1건의 추가 매출 (원)
 
@@ -60,23 +60,30 @@ window.CONFIG = {
   pattyMax: { value: 6, min: 2, max: 12, step: 1 },          // 보관 가능한 패티
   pattyStart: { value: 2, min: 0, max: 6, step: 1 },         // 근무 시작 때 패티
   fryTime: { value: 6, min: 2, max: 15, step: 0.5 },         // 감자 튀기는 시간 (초)
-  fryBurn: { value: 6, min: 2, max: 20, step: 0.5 },         // 다 튀겨진 뒤 타기까지 (초)
+  fryBurn: { value: 10, min: 2, max: 20, step: 0.5 },         // 다 튀겨진 뒤 타기까지 (초)
   fryBatch: { value: 3, min: 1, max: 6, step: 1 },           // 한 바구니 분량
   friesMax: { value: 6, min: 2, max: 12, step: 1 },          // 보관 가능한 감자튀김
   drinkTime: { value: 2, min: 0.5, max: 6, step: 0.5 },      // 음료 따르는 시간 (초)
   drinkMax: { value: 3, min: 1, max: 6, step: 1 },           // 보관 가능한 음료
-  partnerTask: { value: 3.2, min: 1, max: 8, step: 0.2 },    // 파트너가 한 가지 일을 끝내는 시간 (초)
+  partnerTask: { value: 2.4, min: 1, max: 8, step: 0.2 },    // 파트너가 한 가지 일을 끝내는 시간 (초)
+  // 파트너 도움 게이지: 차면 파트너를 터치해 가장 급한 주문의 메뉴를 받는다
+  helpCharge: { value: 18, min: 5, max: 60, step: 1 },       // 게이지가 다 차는 시간 (초)
+  helpRelBonus: { value: 0.15, min: 0, max: 0.5, step: 0.05 },// 관계 단계마다 빨라지는 비율
+  helpPeakMul: { value: 1.3, min: 1, max: 3, step: 0.1 },    // 피크타임에 빨라지는 배율
+  helpItems: { value: 2, min: 1, max: 4, step: 1 },          // 한 번에 만들어 주는 메뉴 수 (친근함부터 +1)
+  helpPatience: { value: 10, min: 0, max: 30, step: 1 },     // 도와준 주문의 손님이 더 기다려 주는 시간 (초)
+  helpAuto: { value: 0.3, min: 0, max: 0.8, step: 0.05 },    // 손님 인내심이 이 비율 아래면 파트너가 알아서 돕는다
   autoDelay: { value: 0.8, min: 0.2, max: 3, step: 0.1 },    // 파트너가 준비된 주문을 대신 내주기까지 (초)
   stackMax: { value: 7, min: 4, max: 10, step: 1 },          // 버거에 쌓을 수 있는 재료 수 (윗번 제외)
 
   // ---- 아이스크림 콘 (3단 쌓기) ----
-  coneSpeed: { value: 0.75, min: 0.3, max: 2, step: 0.05 },  // 노즐이 1초에 왕복하는 횟수
-  coneTierUp: { value: 0.3, min: 0, max: 1, step: 0.05 },    // 한 단 쌓을 때마다 빨라지는 비율
+  coneSpeed: { value: 0.6, min: 0.3, max: 2, step: 0.05 },  // 노즐이 1초에 왕복하는 횟수
+  coneTierUp: { value: 0.2, min: 0, max: 1, step: 0.05 },    // 한 단 쌓을 때마다 빨라지는 비율
   coneWeekUp: { value: 0.08, min: 0, max: 0.5, step: 0.01 }, // 한 주 지날 때마다 빨라지는 비율
   coneSpeedCap: { value: 1.8, min: 0.5, max: 4, step: 0.1 }, // 노즐 속도 한계 (왕복/초)
   coneAmp: { value: 150, min: 60, max: 220, step: 10 },      // 노즐이 움직이는 폭 (px)
-  conePerfect: { value: 18, min: 4, max: 60, step: 2 },      // 완벽 판정 폭 (px)
-  coneOk: { value: 54, min: 20, max: 120, step: 2 },         // 성공 판정 폭 (px), 벗어나면 떨어진다
+  conePerfect: { value: 22, min: 4, max: 60, step: 2 },      // 완벽 판정 폭 (px)
+  coneOk: { value: 68, min: 20, max: 120, step: 2 },         // 성공 판정 폭 (px), 벗어나면 떨어진다
   coneMax: { value: 2, min: 1, max: 4, step: 1 },            // 보관 가능한 콘
 
   // ---- 돈 (원) ----
