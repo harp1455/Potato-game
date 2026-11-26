@@ -39,6 +39,8 @@ window.CONFIG = {
   fastFrac: { value: 0.4, min: 0.1, max: 0.9, step: 0.05 },  // 인내심이 이만큼 남았으면 '빠른 제공'
   slowQuality: { value: 0.75, min: 0.3, max: 1, step: 0.05 },// 느린 제공의 평가 비율
   gagChance: { value: 0.3, min: 0, max: 1, step: 0.05 },     // 콘 주문이 초코콘 손님일 확률
+  bitChance: { value: 0.22, min: 0, max: 1, step: 0.02 },    // 손님이 한마디 던질 확률
+  thanksChance: { value: 0.45, min: 0, max: 1, step: 0.05 }, // 받아 간 손님이 한마디 남길 확률
   potatoChance: { value: 0.07, min: 0, max: 0.5, step: 0.01 },// '감자 닮았다' 손님 확률
   customChance: { value: 0.2, min: 0, max: 1, step: 0.05 },  // 골든번버거 주문이 '피클 빼기'일 확률
   tutorialOrders: { value: 2, min: 0, max: 4, step: 1 },     // 첫날에 손 안내를 해 주는 주문 수
@@ -68,6 +70,7 @@ window.CONFIG = {
   pattyStart: { value: 2, min: 0, max: 6, step: 1 },         // 근무 시작 때 패티
   fryTime: { value: 6, min: 2, max: 15, step: 0.5 },         // 감자 튀기는 시간 (초)
   fryBurn: { value: 10, min: 2, max: 20, step: 0.5 },         // 다 튀겨진 뒤 타기까지 (초)
+  fryPerfect: { value: 2.5, min: 0.5, max: 8, step: 0.5 },   // 다 튀겨진 뒤 이 안에 건지면 완벽 (초)
   fryBatch: { value: 3, min: 1, max: 6, step: 1 },           // 한 바구니 분량
   friesMax: { value: 6, min: 2, max: 12, step: 1 },          // 보관 가능한 감자튀김
   drinkTime: { value: 2, min: 0.5, max: 6, step: 0.5 },      // 음료 따르는 시간 (초)
@@ -102,6 +105,7 @@ window.CONFIG = {
   priceCone: { value: 1000, min: 500, max: 5000, step: 100 },
   setDiscount: { value: 1500, min: 0, max: 5000, step: 100 }, // 세트 할인
   tipFast: { value: 500, min: 0, max: 3000, step: 100 },      // 빠른 제공 팁
+  tipFries: { value: 300, min: 0, max: 2000, step: 100 },     // 완벽하게 건진 감자튀김 팁
   tipCone: { value: 300, min: 0, max: 2000, step: 100 },      // 완벽한 콘 팁
   wasteCost: { value: 800, min: 0, max: 5000, step: 100 },    // 폐기 1건 비용
 
@@ -110,6 +114,7 @@ window.CONFIG = {
   gradeA: { value: 80, min: 40, max: 100, step: 1 },
   gradeB: { value: 65, min: 30, max: 100, step: 1 },
   gradeC: { value: 50, min: 10, max: 100, step: 1 },
+  perfectPts: { value: 1.5, min: 0, max: 5, step: 0.5 },      // 완벽한 감자튀김·콘 한 번의 가산점
   wastePenalty: { value: 1.5, min: 0, max: 10, step: 0.5 },   // 폐기 1건당 감점
 
   // ---- 체력 ----
@@ -156,6 +161,24 @@ window.ART = {
     taebeom: {},
   },
   face: {},
+  chibi: {},
+  // 음식, 재료, 손님 그림을 직접 만든 일러스트로 바꾸려면 여기에 이름: 경로를 적는다. 비워 두면 게임이 그린 선 그림을 쓴다.
+  // 이름: hamburger, french_fries, cup_with_straw, soft_ice_cream, bread, cut_of_meat, cheese_wedge, cucumber, honey_pot, tomato, wastebasket, takeout_box
+  img: {},
+  // 장면 배경
+  bg: {
+    alley: 'assets/bg/alley.webp',
+    bar: 'assets/bg/bar.webp',
+    cafe: 'assets/bg/cafe.webp',
+    counter: 'assets/bg/counter.webp',
+    crewroom: 'assets/bg/crewroom.webp',
+    eaves: 'assets/bg/eaves.webp',
+    freezer: 'assets/bg/freezer.webp',
+    grill: 'assets/bg/grill.webp',
+    hall: 'assets/bg/hall.webp',
+    home: 'assets/bg/home.webp',
+    street: 'assets/bg/street.webp',
+  },
   // 이벤트 CG: 이벤트 id(story.js) -> 파일. 있으면 그 이벤트 동안 스탠딩 자리에 표시된다.
   cg: {},
 };

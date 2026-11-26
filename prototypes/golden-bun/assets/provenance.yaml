@@ -35,3 +35,8 @@
   licence: {id: OFL-1.1}
   date: 2026-11-26
   ships: true
+- path: assets/bg/
+  origin: code
+  tool: "PIL 스크립트: 단순한 형태를 그린 뒤 흐리게 처리한 장면 배경 11장"
+  date: 2026-11-26
+  ships: true

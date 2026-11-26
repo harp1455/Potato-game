@@ -202,7 +202,7 @@ function startDay(partner) {
     shelf: zero(), pop: {}, patty: tune.pattyStart, stack: [],
     grill: 0, fry: { s: 'idle', t: 0 }, drink: 0, cone: { tier: 0, phase: rng(), tiers: [], res: null, resT: 0 },
     popup: null, popT: 0, peek: 0, ptask: null, bubble: { text: STORY.crew[partner].work.start, t: 4, age: 0 }, toast: { text: '', t: 0, kind: 'info', age: 0 },
-    wasPeak: false, banner: 0, tutorial: totalDay(sv) === 1, shake: 0, help: 0, helpTold: false, helped: 0,
+    wasPeak: false, banner: 0, tutorial: totalDay(sv) === 1, shake: 0, help: 0, helpTold: false, helped: 0, perfects: 0, reply: null,
     slow: (sv.stamina <= tune.staminaLow ? tune.tiredSlow : 1) * (perks.stationMul || 1),
   };
 }
@@ -213,7 +213,7 @@ function inPeak(d) {
 function runs(d, what) { return (d.perks.runs || []).includes(what); } // 파트너가 맡은 일인가
 function say(d, key) { d.bubble = { text: STORY.crew[d.partner].work[key], t: 4, age: 0 }; }
 function note(d, s, kind = 'info') { d.toast = { text: s, t: 2.4, kind, age: 0 }; }
-function rating(d) { return d.n ? clamp(100 * d.qsum / d.n - tune.wastePenalty * d.wastes, 0, 100) : 100; }
+function rating(d) { return d.n ? clamp(100 * d.qsum / d.n - tune.wastePenalty * d.wastes + tune.perfectPts * d.perfects, 0, 100) : 100; } // 완벽한 감자튀김과 콘은 가산점
 function waste(d, why) { d.wastes++; d.shake = 0.3; note(d, why, 'bad'); sfx.bad(); }
 function demand(d, id) { return d.orders.reduce((a, o) => a + (o ? o.items.filter(it => it.id === id && !it.done).length : 0), 0); }
 function ready(d, o) { // 남은 메뉴가 전부 선반에 있는가
@@ -238,21 +238,21 @@ function genOrder(d) {
     else items = pick().slice();
     if (isOpen('custom')) items = items.map(id => (id === 'burger' && rng() < tune.customChance ? 'burger_np' : id));
   }
-  let kind = 'normal';
+  let kind = 'normal', bit = null;
   if (!delivery && items.length === 1 && items[0] === 'cone' && rng() < tune.gagChance) kind = 'choco';
-  else if (!delivery && !teach && rng() < tune.potatoChance) kind = 'potato';
+  else if (!delivery && !teach && rng() < tune.bitChance) { kind = 'bit'; bit = STORY.bits[Math.floor(rng() * STORY.bits.length)]; } // 손님의 한마디
   let pat = (inPeak(d) ? tune.patiencePeak : tune.patienceCalm) - tune.patienceDayDrop * (sv.day - 1) - tune.patienceWeekDrop * (sv.week - 1);
   pat = Math.max(tune.patienceMin, pat) * (d.perks.patienceMul || 1);
   if (delivery) pat *= tune.deliveryPatience * (d.rider === 'taebeom' ? tune.riderPatienceMul : 1);
   if (teach) pat *= 2;
-  return { items: items.map(id => ({ id, done: false })), kind, delivery, pat, patMax: pat, look: Math.floor(rng() * 5), born: d.time, enter: 0, auto: 0 };
+  return { items: items.map(id => ({ id, done: false })), kind, delivery, pat, patMax: pat, look: Math.floor(rng() * 10), born: d.time, enter: 0, auto: 0, bit, say: null };
 }
 function spawn(d) {
   const i = d.orders.indexOf(null);
   if (i < 0) return false;
   const o = genOrder(d); d.orders[i] = o; d.spawned++;
-  if (o.kind === 'choco') { note(d, '손님: ' + STORY.customerLines.choco); say(d, 'choco'); }
-  if (o.kind === 'potato') { note(d, '손님: ' + STORY.customerLines.potato); say(d, 'potato'); }
+  if (o.kind === 'choco') { o.say = { text: STORY.customerLines.choco, t: 4 }; d.reply = { t: 1.3, text: STORY.crew[d.partner].work.choco }; }
+  if (o.kind === 'bit') { o.say = { text: o.bit.say, t: 4.5 }; d.reply = { t: 1.5, text: o.bit.re[d.partner] }; }
   if (o.delivery) { const rc = STORY.crew[d.rider]; note(d, `${rc.name}: ${rc.call[Math.floor(rng() * rc.call.length)]}`, 'good'); }
   if (d.tutorial && d.spawned === 2) { if (!runs(d, 'drink')) d.ptask = { id: 'drink', t: 1.5, max: 1.5 }; say(d, 'assist'); } // 첫날 세트의 음료는 파트너가 내 준다
   return true;
@@ -279,7 +279,8 @@ function serve(d, i, byPartner) {
     floatText('팁 +' + won(tip), x, 376, C.mint); burst('star', x, 400, 3);
     if (rng() < 0.25 || byPartner) say(d, 'good');
   }
-  d.ghosts.push({ look: o.look, delivery: o.delivery, x, t: 0 });
+  const word = !o.delivery && rng() < tune.thanksChance ? (fast ? STORY.thanks : STORY.grumble)[Math.floor(rng() * (fast ? STORY.thanks : STORY.grumble).length)] : null;
+  d.ghosts.push({ look: o.look, delivery: o.delivery, x, t: 0, word });
   d.orders[i] = null; sfx.serve(); events.push('serve');
 }
 function tapIngredient(d, what) {
@@ -314,7 +315,11 @@ function tapStation(d, what) {
     const f = d.fry;
     if (f.s === 'idle') { if (d.shelf.fries >= tune.friesMax) return note(d, '감자튀김은 충분해요'); f.s = 'cook'; f.t = tune.fryTime * d.slow; sfx.tap(); }
     else if (f.s === 'cook') note(d, '아직 덜 익었어요');
-    else if (f.s === 'done') { addShelf(d, 'fries', Math.min(tune.fryBatch, tune.friesMax - d.shelf.fries)); f.s = 'idle'; sfx.ready(); }
+    else if (f.s === 'done') {
+      addShelf(d, 'fries', Math.min(tune.fryBatch, tune.friesMax - d.shelf.fries)); f.s = 'idle';
+      if (tune.fryBurn - f.t <= tune.fryPerfect) { d.perfects++; d.tips += tune.tipFries; note(d, `완벽한 타이밍! 가산점 +${tune.perfectPts} · 팁 +${won(tune.tipFries)}`, 'good'); sfx.serve(); burst('star', 130, 1130, 8); }
+      else sfx.ready();
+    }
     else { f.s = 'idle'; sfx.tap(); }
   } else if (what === 'drink') {
     if (runs(d, 'drink')) return note(d, `음료는 ${who} 담당이에요`);
@@ -349,7 +354,7 @@ function coneDrop(d) { // 노즐 위치에서 한 단 떨어뜨린다
   if (c.tier === 3) {
     const perfect = c.tiers.every(t => Math.abs(t.off) <= tune.conePerfect);
     c.res = perfect ? 'perfect' : 'ok'; c.resT = 0.8; addShelf(d, 'cone');
-    if (perfect) { d.tips += tune.tipCone; note(d, '완벽한 콘! 팁 +' + won(tune.tipCone), 'good'); sfx.serve(); burst('star', 360, 1060, 8); }
+    if (perfect) { d.perfects++; d.tips += tune.tipCone; note(d, `완벽한 콘! 가산점 +${tune.perfectPts} · 팁 +${won(tune.tipCone)}`, 'good'); sfx.serve(); burst('star', 360, 1060, 8); }
     else { note(d, '콘 완성!', 'good'); sfx.ready(); }
   }
 }
@@ -432,6 +437,7 @@ function updateDay(d, dt) {
   d.orders.forEach((o, i) => {
     if (!o) return;
     o.enter = Math.min(1, o.enter + dt / 0.35);
+    if (o.say && (o.say.t -= dt) <= 0) o.say = null;
     o.pat -= dt;
     if (o.pat <= 0) {
       d.orders[i] = null; d.lost++; d.n++; d.shake = 0.3;
@@ -441,7 +447,8 @@ function updateDay(d, dt) {
     const auto = o.delivery ? true : d.perks.autoServe; // 준비된 배달은 라이더가 가져가고, 응대 담당은 매장 주문을 대신 내준다
     if (auto && ready(d, o)) { o.auto += dt; if (o.auto >= tune.autoDelay) serve(d, i, true); } else o.auto = 0;
   });
-  d.ghosts = d.ghosts.filter(g => (g.t += dt) < 0.45);
+  d.ghosts = d.ghosts.filter(g => (g.t += dt) < (g.word ? 1.6 : 0.45));
+  if (d.reply) { d.reply.t -= dt; if (d.reply.t <= 0) { if (d.reply.text) d.bubble = { text: d.reply.text, t: 4, age: 0 }; d.reply = null; } } // 손님 말에 파트너가 한 박자 뒤에 대답한다
   // 구역
   if (d.grill > 0) { d.grill -= dt; if (d.grill <= 0) { d.patty = Math.min(tune.pattyMax, d.patty + tune.grillBatch); sfx.ready(); } }
   if (d.fry.s === 'cook') { d.fry.t -= dt; if (d.fry.t <= 0) { d.fry.s = 'done'; d.fry.t = tune.fryBurn; sfx.ready(); note(d, '감자튀김이 다 됐어요. 건져 주세요!', 'good'); } }
@@ -556,6 +563,13 @@ function startDate(id, type, byMe) { // 퇴근 후 약속: 크루가 청했거�
     sv.stamina = clamp(sv.stamina + sta, 1, 5);
     sceneTail(id, before, ev, `${tname} 약속을 다녀왔어요.` + (sta > 0 ? ' 든든하게 먹어서 체력 +1' : sta < 0 ? ' 내일은 조금 피곤할 거예요. 체력 -1' : ''));
   });
+}
+function startGreet(id) { // 근무 전 출근 인사: 파트너와 한마디 주고받고, 오늘의 라이더가 한마디 한다
+  const sv = state.save, g = STORY.greet[id] && STORY.greet[id][Math.min(2, relIdx(sv.aff[id]))], rid = state.d.rider, rc = STORY.crew[rid];
+  if (!g) { scene = 'play'; return; }
+  const nodes = [{ s: id, t: g.t, f: 'smile' }, { c: g.a.map(a => ({ t: a[0], aff: a[1], then: [{ s: id, t: a[2], f: a[1] > 1 ? 'happy' : 'work' }] })) }];
+  if (rc.hello) nodes.push({ s: rid, t: rc.hello[Math.min(2, relIdx(sv.aff[rid]))], f: 'work' });
+  startVN({ id: 'greet', loc: 'counter', place: '출근', nodes }, id, () => { scene = 'play'; });
 }
 function openAfter() { // 정산 뒤: 누구와 시간을 보낼지 고른다. 오늘 같이 일한 파트너와 라이더가 있다
   const sv = state.save, sum = state.sum, present = [sum.partner, sum.rider];
@@ -739,23 +753,27 @@ const scenes = {
     },
     draw() {
       const v = state.vn, n = v.nodes[v.i], t = state.t;
-      drawLoc(v.loc, t); fillRect(0, 0, W, H, 'rgba(255,255,255,0.3)');
+      drawLoc(v.loc, t);
       const show = n && n.c ? v.last : n, who = v.shown, cg = v.id && ART.cg[v.id];
       if (cg) drawPortrait(v.owner || who || 'seongdo', v.face, 30, 150, 660, 440, v.id);
       else if (who) { // 캐릭터를 틀 없이 크게: 뒤에 그 크루의 색 원, 아래는 대사 창이 받친다
         const cr = STORY.crew[who], pop = 1 + 0.025 * (1 - easeOut(v.age / 0.25)) * (show && show.s ? 1 : 0);
-        ell(360, 480, 310, 310, shade(cr.color, 0.6), null); ell(360, 480, 310, 310, null, C.white, 10);
+        const k = ctx.getTransform().a;
         ctx.save(); ctx.translate(360, 900); ctx.scale(pop, pop); ctx.translate(-360, -900);
-        drawChar(who, v.face, 360, 900, 800, show && !show.s ? 0.94 : 1);
+        ctx.shadowColor = 'rgba(12,20,34,0.45)'; ctx.shadowBlur = 34 * k; ctx.shadowOffsetY = 10 * k; // 배경에 그림자를 떨어뜨려 붙여 준다
+        drawChar(who, v.face, 360, 900, 730, 1);
         ctx.restore();
-      } else { ell(360, 480, 230, 230, C.white, null); drawBunny(360, 500 + Math.sin(t * 2) * 6, 3); }
+        const tint = { alley: 'rgba(20,40,90,0.14)', hall: 'rgba(20,40,90,0.12)', eaves: 'rgba(20,50,100,0.16)', street: 'rgba(20,40,90,0.14)', bar: 'rgba(120,50,20,0.10)', cafe: 'rgba(255,170,80,0.07)', home: 'rgba(255,190,110,0.06)', freezer: 'rgba(120,200,255,0.10)' }[v.loc];
+        if (tint) fillRect(0, 0, W, 900, tint); // 장면의 빛을 캐릭터에도 살짝 입힌다
+      } else drawBunny(360, 500 + Math.sin(t * 2) * 6, 3);
       panel(24, 26, 290, 58, 20, C.white, C.white); text(v.place, 169, 56, 24, C.ink, 'center', true);
       if (v.owner) { const R = relOf(v.owner); panel(406, 26, 290, 58, 20, C.white, C.white); text(`${R.e} ${R.label}`, 551, 56, 24, C.ink, 'center', true); }
       panel(24, 884, 672, 300, 26, C.white, C.white);
       if (show) {
         const s = vnText(show), shown = n && n.c ? s : s.slice(0, Math.floor(v.chars));
         if (show.s) { const cr = STORY.crew[show.s]; panel(44, 856, 196, 58, 20, cr.color, cr.color, { shadow: 4 }); textO(cr.name, 142, 886, 30, C.white, C.ink, 6); }
-        para(shown, 58, 962, 604, 28, show.s ? C.ink : C.ink2, 44);
+        let left = shown.length; // 줄바꿈은 전체 문장으로 미리 정하고, 글자만 차례로 드러낸다
+        wrap(s, 604, 28).forEach((l, i) => { if (left > 0) text(l.slice(0, left), 58, 962 + i * 44, 28, show.s ? C.ink : C.ink2, 'left'); left -= l.length + 1; });
         if (!(n && n.c) && v.chars >= s.length) { const by = 1150 + Math.sin(t * 6) * 4; poly([640, by - 8, 664, by - 8, 652, by + 8], C.cherry, C.ink, 3); }
       }
       if (n && n.c) {
@@ -775,7 +793,7 @@ const scenes = {
   },
   pick: {
     keys: { Digit1: 'p0', Digit2: 'p1', Digit3: 'p2', Digit4: 'p3' },
-    act(id) { const k = PARTNERS[Number(id[1])]; if (k) { startDay(k); scene = 'play'; sfx.choice(); } },
+    act(id) { const k = PARTNERS[Number(id[1])]; if (k) { startDay(k); sfx.choice(); startGreet(k); } },
     update(dt) { state.t += dt; },
     draw() {
       const sv = state.save, sh = shiftOf(sv), rid = riderOf(sv), rc = STORY.crew[rid], ss = seasonOf(sv);
@@ -857,7 +875,7 @@ const scenes = {
       if (t > 0.35) { const k = 3 - 2 * easeBack((t - 0.35) / 0.3); at(150, 292, k, () => { drawStar(0, 0, 84, GRADE_COLOR[s.grade], -0.15); textO(s.grade, 0, 6, 76, C.white, C.ink, 10); }); }
       text('근무 평가', 450, 216, 24, C.ink2, 'center', true);
       textO(`${Math.round(s.score * easeOut(t / 0.8))}점`, 450, 286, 64, C.sun, C.ink, 10);
-      text(`제공 ${d.served} · 클레임 ${d.lost} · 폐기 ${d.wastes}`, 450, 360, 22, C.ink, 'center', true);
+      text(`제공 ${d.served} · 클레임 ${d.lost} · 폐기 ${d.wastes} · 완벽 ${d.perfects}`, 450, 360, 22, C.ink, 'center', true);
       panel(30, 440, 660, 420, 28, C.white, C.paper);
       text('매출 정산', 60, 478, 26, C.ink, 'left', true);
       const rows = [];
@@ -1003,7 +1021,7 @@ function stationState(d, id) {
   if (id === 'fry') {
     const f = d.fry;
     if (f.s === 'cook') return { status: '튀기는 중…', prog: 1 - f.t / (tune.fryTime * d.slow), busy: true };
-    if (f.s === 'done') return { status: '지금 건지세요!', prog: f.t / tune.fryBurn, pc: C.cherry, alert: true };
+    if (f.s === 'done') { const hot = tune.fryBurn - f.t <= tune.fryPerfect; return { status: hot ? '지금이 딱!' : '어서 건지세요!', prog: f.t / tune.fryBurn, pc: hot ? C.green : C.cherry, alert: true }; }
     if (f.s === 'burnt') return { status: '탔어요. 비우기', prog: -1, dark: true };
     return { status: '터치해서 튀기기', prog: -1 };
   }
@@ -1050,37 +1068,29 @@ function drawBurgerPopup(d) {
   closeBtn();
   // 쌓는 곳
   const sx = d.shake > 0 ? Math.sin(t * 60) * 6 : 0;
-  panel(24, 838, 300, 214, 22, C.white, C.steel, { shadow: 4 });
-  ell(174 + sx, 1030, 116, 14, C.steelD);
-  if (d.stack.length) drawStack(d, 174 + sx, 1024, 1);
-  else text('번부터 깔아요', 174, 940, 22, C.ink2, 'center', true);
-  // 만들 버거와 레시피
-  panel(336, 838, 360, 214, 22, C.white, C.paper, { shadow: 4 });
-  const needs = BURGERS.map(id => ({ id, n: demand(d, id) - d.shelf[id] })).filter(x => x.n > 0);
-  text('만들 버거', 356, 862, 20, C.ink2, 'left', true);
-  if (!needs.length) text('지금 필요한 버거는 없어요', 516, 908, 20, C.ink2);
-  needs.slice(0, 2).forEach((nd, i) => {
-    const y = 898 + i * 40;
-    drawItem(nd.id, 372, y, 0.4); text(itemName(nd.id), 400, y, 22, C.ink, 'left', true);
-    ell(668, y, 17, 17, C.cherry, C.ink, 3); textO(String(nd.n), 668, y + 1, 22, C.white, C.ink, 4);
-  });
-  const target = needs.length ? needs[0].id : 'burger', rec = recOf(target);
-  const hintOn = totalDay(sv) <= tune.recipeHintDays || d.peek > 0;
-  line(352, 972, 680, 972, '#e3e8ec', 3);
-  if (hintOn) {
-    text('레시피 (아래부터)', 356, 992, 20, C.ink2, 'left', true);
-    const okPrefix = d.stack.every((s, j) => s.id === rec[j]);
+  panel(24, 838, 216, 214, 22, C.white, C.white, { shadow: 4 });
+  ell(132 + sx, 1030, 92, 12, C.steelD);
+  if (d.stack.length) drawStack(d, 132 + sx, 1024, 0.84);
+  else text('번부터 깔아요', 132, 940, 20, C.ink2, 'center', true);
+  // 레시피: 지금 만들 수 있는 버거 전부를 늘 보여 주고, 주문이 들어온 것은 개수를 붙인다
+  panel(250, 838, 446, 214, 22, C.white, C.white, { shadow: 4 });
+  const rows = BURGERS.filter(itemOpen), rh = Math.min(52, 198 / rows.length), key = d.stack.map(x => x.id).join(',');
+  const needOf = id => demand(d, id) - d.shelf[id], fits = id => d.stack.length > 0 && recOf(id).slice(0, d.stack.length).join(',') === key;
+  const cur = rows.find(id => fits(id) && needOf(id) > 0) || rows.find(fits) || (d.stack.length ? null : rows.find(id => needOf(id) > 0));
+  const SHORT = { burger: '골든번버거', burger_np: '피클 빼기', double: '더블치즈번' };
+  rows.forEach((id, i) => {
+    const y = 846 + rh * (i + 0.5), rec = recOf(id), need = needOf(id), pre = fits(id);
+    if (id === cur) rr(256, y - rh / 2 + 3, 434, rh - 6, 12, '#fff3d6', null);
+    if (need > 0) { ell(276, y, 15, 15, C.cherry, C.ink, 3); textO(String(need), 276, y + 1, 20, C.white, C.ink, 4); }
+    text(SHORT[id] || itemName(id), 298, y, 20, need > 0 || id === cur ? C.ink : C.ink2, 'left', true);
     rec.forEach((ing, j) => {
-      const x = 372 + j * 46, cur = okPrefix && j === d.stack.length;
-      if (cur) ell(x, 1026, 22, 22, '#fff0b8', C.cherry, 4);
-      ctx.globalAlpha = okPrefix && j < d.stack.length ? 0.35 : 1; drawItem(ing, x, 1026, 0.36); ctx.globalAlpha = 1;
+      const x = 458 + j * 34;
+      if (id === cur && j === d.stack.length) ell(x, y, 17, 17, '#ffe08a', C.cherry, 3);
+      ctx.globalAlpha = pre && j < d.stack.length ? 0.3 : 1; drawItem(ing, x, y, 0.32); ctx.globalAlpha = 1;
     });
-  } else {
-    text('레시피는 이제 외워서 만들어요', 516, 994, 20, C.ink2);
-    btn('peek', 426, 1010, 180, 36, C.sun, C.sunD, () => text('레시피 보기', 516, 1029, 20, C.ink, 'center', true), { r: 12, shadow: 3 });
-  }
-  // 재료
+  });
   const dbl = isOpen('double');
+  // 재료
   const ings = [['bun', d.stack.length ? '번 덮기' : '번 깔기', C.sun], ['patty', `패티 ×${d.patty}`, C.wood], ['cheese', '치즈', '#ffe680'], ['pickle', '피클', '#b5ec7f'],
     ['gold', '골든소스', '#ffd866'], ['ketchup', '케첩', '#ff8a92'], ['special', curSeason ? curSeason.specialName : '시즌 재료', '#ffc48f'], ['trash', '버리기', C.white]];
   ings.forEach(([id, label, c1], i) => {
@@ -1132,7 +1142,7 @@ function drawPlay() {
   drawStore(sh.sky, 158, 470, t, peak);
   // 떠나는 손님
   d.ghosts.forEach(gh => {
-    const k = gh.t / 0.45; ctx.globalAlpha = 1 - k;
+    const k = Math.min(1, gh.t / 0.45); ctx.globalAlpha = 1 - k;
     if (gh.delivery) { drawChibi(d.rider, gh.x - 14 - k * 140, 462, 124); drawItem('bag', gh.x + 46 - k * 140, 432, 0.6); }
     else drawCustomer(gh.look, gh.x, 498 + easeOut(k) * 70 - Math.sin(k * Math.PI) * 26, 'happy', 0.86);
     ctx.globalAlpha = 1;
@@ -1162,6 +1172,15 @@ function drawPlay() {
     ctx.globalAlpha = 1;
     zone('slot' + i, x - 86, 168, 172, 300);
   });
+  // 손님의 한마디
+  const sayBubble = (txt, x, y, a) => {
+    const lines = wrap(txt, 250, 20, true).slice(0, 2); setFont(20, true);
+    const tw = Math.max(...lines.map(l => ctx.measureText(l).width)) + 32, bx = clamp(x, tw / 2 + 8, W - tw / 2 - 8), bh = lines.length * 26 + 16;
+    ctx.globalAlpha = a; panel(bx - tw / 2, y - bh / 2, tw, bh, 16, C.white, C.white, { shadow: 3, lip: false });
+    lines.forEach((l, j) => text(l, bx, y + (j - (lines.length - 1) / 2) * 26, 20, C.ink, 'center', true)); ctx.globalAlpha = 1;
+  };
+  d.orders.forEach((o, i) => { if (o && o.say) sayBubble(o.say.text, 96 + i * 176, 322, clamp(o.say.t * 2, 0, 1)); });
+  d.ghosts.forEach(gh => { if (gh.word) sayBubble(gh.word, gh.x, 330 - gh.t * 24, clamp((1.6 - gh.t) * 2, 0, 1)); });
   // 카운터와 간판
   panel(-6, 462, W + 12, 88, 0, C.wood, C.woodD, { shadow: 0 }); fillRect(-6, 462, W + 12, 14, '#ffc98a'); line(-6, 476, W + 6, 476, C.ink, 4);
   panel(250, 488, 220, 48, 14, C.white, C.paper, { shadow: 3 }); text('GOLDEN BUN', 360, 513, 22, C.cherryD, 'center', true);
@@ -1328,6 +1347,8 @@ if (window.ART) { // 스탠딩과 CG를 시작할 때 미리 불러 둔다
   for (const id in ART.crew) for (const k in ART.crew[id]) getImg(ART.crew[id][k]);
   for (const k in ART.cg) getImg(ART.cg[k]);
   for (const k in (ART.chibi || {})) getImg(ART.chibi[k]);
+  for (const k in (ART.img || {})) getImg(ART.img[k]);
+  for (const k in (ART.bg || {})) getImg(ART.bg[k]);
 }
 reset();
 scene = params.get('scene') || 'title';

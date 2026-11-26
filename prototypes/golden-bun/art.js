@@ -25,14 +25,22 @@ function textO(s, x, y, size, c = C.white, o = C.ink, lw = 6, align = 'center') 
   setFont(size, true); ctx.textAlign = align; ctx.textBaseline = 'middle'; ctx.lineJoin = 'round';
   ctx.strokeStyle = o; ctx.lineWidth = lw * 0.85; ctx.strokeText(s, x, y); ctx.fillStyle = c; ctx.fillText(s, x, y);
 }
-function wrap(s, maxW, size, bold = false) { // 한글은 글자 단위로 줄바꿈
+function wrap(s, maxW, size, bold = false) { // 띄어쓰기 단위로 줄바꿈. 한 단어가 너무 길 때만 글자 단위로 자른다
   setFont(size, bold);
   const out = []; let line = '';
-  for (const ch of s) {
-    if (ctx.measureText(line + ch).width > maxW && line) { out.push(line); line = ch === ' ' ? '' : ch; }
-    else line += ch;
+  for (const word of String(s).split(' ')) {
+    const t = line ? line + ' ' + word : word;
+    if (ctx.measureText(t).width <= maxW) { line = t; continue; }
+    if (line) { out.push(line); line = ''; }
+    let w = word;
+    while (ctx.measureText(w).width > maxW) { let k = w.length - 1; while (k > 1 && ctx.measureText(w.slice(0, k)).width > maxW) k--; out.push(w.slice(0, k)); w = w.slice(k); }
+    line = w;
   }
   if (line) out.push(line);
+  if (out.length > 1) { // 마지막 줄에 한두 글자만 남으면 앞줄에서 한 단어를 내려 균형을 맞춘다
+    const a = out[out.length - 2], b = out[out.length - 1], i = a.lastIndexOf(' ');
+    if (b.length <= 3 && i > 0 && ctx.measureText(a.slice(i + 1) + ' ' + b).width <= maxW) { out[out.length - 2] = a.slice(0, i); out[out.length - 1] = a.slice(i + 1) + ' ' + b; }
+  }
   return out;
 }
 function para(s, x, y, maxW, size, c, lh, align = 'left', bold = false) {
@@ -123,7 +131,22 @@ function bottle(c, label) { // 소스 통
   ell(0, 3, 6, 6, label, null);
   ctx.fillStyle = 'rgba(255,255,255,0.45)'; ctx.beginPath(); ctx.roundRect(-14, -22, 6, 20, 3); ctx.fill();
 }
+// 일러스트 이미지: config.js 의 ART.img 에 있으면 그것을 쓰고, 없으면 아래의 선 그림으로 대신한다
+const ITEM_IMG = { burger: 'hamburger', burger_np: 'hamburger', double: 'hamburger', season: 'hamburger', fries: 'french_fries', drink: 'cup_with_straw', cone: 'soft_ice_cream',
+  bun: 'bread', patty: 'cut_of_meat', cheese: 'cheese_wedge', pickle: 'cucumber', gold: 'honey_pot', ketchup: 'tomato', trash: 'wastebasket', bag: 'takeout_box' };
+const SPECIAL_IMG = { chicken: 'poultry_leg', bulgogi: 'pot_of_food', egg: 'cooking', jalapeno: 'hot_pepper' };
+const PEOPLE = ['man_student', 'man_office_worker', 'old_woman', 'man_singer', 'woman', 'old_man', 'man_artist', 'woman_office_worker', 'man_technologist', 'woman_student'];
+function pic(name) { const p = window.ART && ART.img && ART.img[name]; return p ? getImg(p) : null; }
+function drawPic(im, x, y, size) { const k = size / Math.max(im.naturalWidth, im.naturalHeight); ctx.drawImage(im, x - im.naturalWidth * k / 2, y - im.naturalHeight * k / 2, im.naturalWidth * k, im.naturalHeight * k); }
 function drawItem(id, x, y, s) { // 음식과 재료, 기준 크기 약 80px
+  const spName = SPECIAL_IMG[curSeason ? curSeason.special : 'chicken'], im = pic(id === 'special' ? spName : ITEM_IMG[id]);
+  if (im) {
+    const z = 88 * s;
+    if (id === 'double') { drawPic(im, x - 7 * s, y + 9 * s, z * 0.84); drawPic(im, x + 7 * s, y - 9 * s, z * 0.84); } else drawPic(im, x, y, z);
+    if (id === 'burger_np') at(x + 28 * s, y + 24 * s, s, () => { ell(0, 0, 18, 18, C.white, C.cherry, 3); const c = pic('cucumber'); if (c) drawPic(c, 0, 0, 24); line(-11, 11, 11, -11, C.cherry, 5); });
+    if (id === 'season') at(x + 28 * s, y + 24 * s, s, () => { ell(0, 0, 19, 19, C.white, C.sunD, 3); const c = pic(spName); if (c) drawPic(c, 0, 0, 28); });
+    return;
+  }
   at(x, y, s, () => {
     if (id === 'burger' || id === 'double' || id === 'burger_np') {
       const dbl = id === 'double'; let yy = 32;
@@ -192,10 +215,13 @@ function drawStar(x, y, r, fill = C.sun, rot = 0) {
   poly(p, fill, C.ink, Math.max(2, r * 0.12));
 }
 function drawBolt(x, y, s, on) { // 체력 한 칸
+  const im = pic('high_voltage'); if (im) { ctx.globalAlpha = on ? 1 : 0.28; drawPic(im, x, y, 30 * s); ctx.globalAlpha = 1; return; }
   at(x, y, s, () => poly([4, -16, -10, 2, -1, 2, -5, 16, 10, -3, 1, -3], on ? C.sun : '#d93a50', on ? '#a86a00' : '#b32a40', 2.5));
 }
-function drawCoin(x, y, r) { ell(x, y, r, r, C.sun, C.ink, Math.max(2, r * 0.2)); ell(x, y, r * 0.55, r * 0.55, null, C.sunD, Math.max(1.5, r * 0.16)); }
+function drawCoin(x, y, r) {
+  const im = pic('coin'); if (im) { drawPic(im, x, y, r * 2.5); return; } ell(x, y, r, r, C.sun, C.ink, Math.max(2, r * 0.2)); ell(x, y, r * 0.55, r * 0.55, null, C.sunD, Math.max(1.5, r * 0.16)); }
 function drawHeart(x, y, s, c = C.pink) {
+  const im = pic('sparkling_heart'); if (im) { drawPic(im, x, y, 34 * s); return; }
   at(x, y, s, () => {
     ctx.beginPath(); ctx.moveTo(0, 12); ctx.bezierCurveTo(-22, -4, -12, -20, 0, -8); ctx.bezierCurveTo(12, -20, 22, -4, 0, 12); ctx.closePath();
     ctx.fillStyle = c; ctx.fill(); ctx.strokeStyle = C.ink; ctx.lineWidth = 3; ctx.stroke();
@@ -218,6 +244,14 @@ function face(mood, eyeY, mouthY) {
   mouth(mood, mouthY);
 }
 function drawCustomer(kind, x, y, mood, s = 1) { // 발밑이 (x, y), 카운터가 아래를 가린다
+  const im = pic(PEOPLE[kind % PEOPLE.length]);
+  if (!im) kind = kind % 5; // 선 그림 손님은 다섯 가지
+  if (im) {
+    drawPic(im, x, y - 104 * s, 150 * s);
+    const fm = mood === 'angry' ? pic('angry_face') : mood === 'happy' ? pic('grinning_face_with_smiling_eyes') : null;
+    if (fm) drawPic(fm, x + 54 * s, y - 160 * s, 42 * s);
+    return;
+  }
   at(x, y, s, () => {
     if (kind === 0) { // 학생: 모자와 가방끈
       rr(-52, -96, 104, 110, 30, C.skyD);
@@ -363,6 +397,13 @@ function drawStore(skyKey, y0, y1, t, peak) { // 매장 벽, 창밖, 간판 아�
   if (peak) fillRect(0, y0, W, y1 - y0, `rgba(255,79,100,${0.06 + 0.05 * Math.sin(t * 6)})`);
 }
 function drawLoc(loc, t) { // 이벤트 배경
+  const bp = window.ART && ART.bg && ART.bg[loc], bi = bp ? getImg(bp) : null;
+  if (bi) {
+    const k = Math.max(W / bi.naturalWidth, H / bi.naturalHeight);
+    ctx.drawImage(bi, (W - bi.naturalWidth * k) / 2, (H - bi.naturalHeight * k) / 2, bi.naturalWidth * k, bi.naturalHeight * k);
+    if (loc === 'eaves') for (let i = 0; i < 44; i++) { const x = (i * 61 + t * 40) % W, y = (i * 97 + t * 900) % H; line(x, y, x - 6, y + 26, 'rgba(190,214,240,0.55)', 3); }
+    return;
+  }
   const L = {
     crewroom: ['#dff3ff', '#cdeafb'], alley: ['#2b3a4d', '#243242'], hall: ['#2a3b52', '#233347'], grill: ['#e9eef3', '#dbe3ea'],
     freezer: ['#d9f4ff', '#c4ebfb'], eaves: ['#33455c', '#2b3b50'], counter: ['#fff3da', '#ffe9be'], street: ['#1f2e45', '#1a273b'],
