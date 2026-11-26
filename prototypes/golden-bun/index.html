@@ -616,20 +616,32 @@ function drawPortrait(id, f, x, y, w, h, cgId, o = {}) {
   const F = !cg && key && ART.face && ART.face[id] && ART.face[id][key]; // 배경을 지운 스탠딩이면 얼굴 위치 [가운데 x, 가운데 y, 크기]
   panel(x, y, w, h, o.r || 16, C.white, C.white, { shadow: o.shadow === undefined ? 6 : o.shadow, lip: false });
   ctx.save(); ctx.beginPath(); ctx.roundRect(x + 3, y + 3, w - 6, h - 6, (o.r || 16) - 2); ctx.clip();
-  if (!im || F) { ctx.fillStyle = cr.color; ctx.globalAlpha = 0.22; ctx.fillRect(x, y, w, h); ctx.globalAlpha = 1; }
+  if (!im || F) { ctx.fillStyle = shade(cr.color, 0.62); ctx.fillRect(x, y, w, h); }
   if (im && F && h >= 300) { // 큰 칸: 전신을 위에 맞춰 그대로
     const k = h / im.naturalHeight * 1.04;
     ctx.drawImage(im, x + (w - im.naturalWidth * k) / 2, y, im.naturalWidth * k, im.naturalHeight * k);
   } else if (im && F) { // 작은 칸: 얼굴 쪽을 당겨서
-    const fs = F[2] * im.naturalHeight, sh = fs * (w / h > 1.3 ? 1.45 : 1.15), sw = sh * w / h;
+    const fs = F[2] * im.naturalHeight, sh = fs * (o.zoom || (w / h > 1.3 ? 1.45 : 1.15)), sw = sh * w / h;
     ctx.drawImage(im, F[0] * im.naturalWidth - sw / 2, F[1] * im.naturalHeight - fs * 0.54, sw, sh, x, y, w, h);
   } else if (im) {
     const k = Math.max(w / im.naturalWidth, h / im.naturalHeight);
     ctx.drawImage(im, x + (w - im.naturalWidth * k) / 2, y + (h - im.naturalHeight * k) / 2, im.naturalWidth * k, im.naturalHeight * k);
   } else if (!key && !cg) drawCrewBust(id, x + w / 2, y + h * 0.68, h / 300, BUST_FACE[f] || f); // 스탠딩이 있는 크루는 불러오는 동안 빈 칸으로 둔다 (임시 그림이 먼저 비치지 않게)
   ctx.restore();
-  ctx.beginPath(); ctx.roundRect(x, y, w, h, o.r || 16); ctx.strokeStyle = C.ink; ctx.lineWidth = 4; ctx.stroke();
+  ctx.beginPath(); ctx.roundRect(x, y, w, h, o.r || 16); ctx.strokeStyle = C.white; ctx.lineWidth = 5; ctx.stroke(); // 그림과 어울리게 검은 테 대신 흰 테
+  ctx.beginPath(); ctx.roundRect(x - 2, y - 2, w + 4, h + 4, (o.r || 16) + 2); ctx.strokeStyle = shade(cr.color, -0.1); ctx.lineWidth = 2; ctx.stroke();
   if (!im && !key && h > 300) text('임시 그림 · 이미지 슬롯', x + w - 16, y + 24, 20, C.ink2, 'right');
+}
+
+function drawChar(id, f, cx, bottom, size, alpha = 1) { // 배경 없는 스탠딩을 틀 없이 그대로 세운다. size = 한 변 길이, bottom = 아래 끝
+  const art = (window.ART && ART.crew[id]) || {}, key = artKey(id, f), im = key ? getImg(art[key]) : null;
+  if (im) { ctx.globalAlpha = alpha; ctx.drawImage(im, cx - size / 2, bottom - size, size, size); ctx.globalAlpha = 1; }
+  else if (!key) drawCrewBust(id, cx, bottom - size * 0.36, size / 420, BUST_FACE[f] || f);
+}
+function drawChibi(id, cx, bottom, h) { // 2등신 작은 캐릭터. 없으면 얼굴 칸으로 대신한다
+  const p = window.ART && ART.chibi && ART.chibi[id], im = getImg(p);
+  if (im) { const w = h * im.naturalWidth / im.naturalHeight; ctx.drawImage(im, cx - w / 2, bottom - h, w, h); }
+  else if (!p) drawPortrait(id, 'work', cx - h * 0.5, bottom - h * 0.94, h, h * 0.94, null, { shadow: 0, r: 12 });
 }
 
 // ---- 버튼 ---------------------------------------------------------------------------------
@@ -727,37 +739,38 @@ const scenes = {
     },
     draw() {
       const v = state.vn, n = v.nodes[v.i], t = state.t;
-      drawLoc(v.loc, t);
-      panel(24, 26, 290, 58, 20, C.white, C.paper); text(v.place, 169, 56, 24, C.ink, 'center', true);
-      if (v.owner) { const R = relOf(v.owner); panel(406, 26, 290, 58, 20, C.white, C.paper); text(`${R.e} ${R.label}`, 551, 56, 24, C.ink, 'center', true); }
-      const show = n && n.c ? v.last : n, who = v.shown;
-      if (who) {
-        const k = 1 + 0.03 * (1 - easeOut(v.age / 0.25)) * (show && show.s ? 1 : 0);
-        ctx.save(); ctx.translate(360, 560); ctx.scale(k, k); ctx.translate(-360, -560);
-        drawPortrait(who, v.face, 30, 116, 660, 440, v.id);
-        if (show && !show.s) { ctx.fillStyle = 'rgba(26,38,52,0.2)'; ctx.beginPath(); ctx.roundRect(30, 116, 660, 440, 16); ctx.fill(); }
+      drawLoc(v.loc, t); fillRect(0, 0, W, H, 'rgba(255,255,255,0.3)');
+      const show = n && n.c ? v.last : n, who = v.shown, cg = v.id && ART.cg[v.id];
+      if (cg) drawPortrait(v.owner || who || 'seongdo', v.face, 30, 150, 660, 440, v.id);
+      else if (who) { // 캐릭터를 틀 없이 크게: 뒤에 그 크루의 색 원, 아래는 대사 창이 받친다
+        const cr = STORY.crew[who], pop = 1 + 0.025 * (1 - easeOut(v.age / 0.25)) * (show && show.s ? 1 : 0);
+        ell(360, 480, 310, 310, shade(cr.color, 0.6), null); ell(360, 480, 310, 310, null, C.white, 10);
+        ctx.save(); ctx.translate(360, 900); ctx.scale(pop, pop); ctx.translate(-360, -900);
+        drawChar(who, v.face, 360, 900, 800, show && !show.s ? 0.94 : 1);
         ctx.restore();
-      } else { panel(210, 186, 300, 300, 150, C.white, C.paper); drawBunny(360, 356 + Math.sin(t * 2) * 6, 2.4); }
-      panel(24, 590, 672, 324, 26, C.white, C.paper);
+      } else { ell(360, 480, 230, 230, C.white, null); drawBunny(360, 500 + Math.sin(t * 2) * 6, 3); }
+      panel(24, 26, 290, 58, 20, C.white, C.white); text(v.place, 169, 56, 24, C.ink, 'center', true);
+      if (v.owner) { const R = relOf(v.owner); panel(406, 26, 290, 58, 20, C.white, C.white); text(`${R.e} ${R.label}`, 551, 56, 24, C.ink, 'center', true); }
+      panel(24, 884, 672, 300, 26, C.white, C.white);
       if (show) {
         const s = vnText(show), shown = n && n.c ? s : s.slice(0, Math.floor(v.chars));
-        if (show.s) { const cr = STORY.crew[show.s]; panel(44, 562, 196, 58, 20, cr.color, cr.color, { shadow: 4 }); textO(cr.name, 142, 592, 30, C.white, C.ink, 6); }
-        para(shown, 58, 668, 604, 28, show.s ? C.ink : C.ink2, 44);
-        if (!(n && n.c) && v.chars >= s.length) { const by = 876 + Math.sin(t * 6) * 4; poly([640, by - 8, 664, by - 8, 652, by + 8], C.cherry, C.ink, 3); }
+        if (show.s) { const cr = STORY.crew[show.s]; panel(44, 856, 196, 58, 20, cr.color, cr.color, { shadow: 4 }); textO(cr.name, 142, 886, 30, C.white, C.ink, 6); }
+        para(shown, 58, 962, 604, 28, show.s ? C.ink : C.ink2, 44);
+        if (!(n && n.c) && v.chars >= s.length) { const by = 1150 + Math.sin(t * 6) * 4; poly([640, by - 8, 664, by - 8, 652, by + 8], C.cherry, C.ink, 3); }
       }
       if (n && n.c) {
         n.c.forEach((o, k) => {
-          const p = easeBack((v.choiceT - k * 0.08) / 0.3), y = 934 + k * 108;
+          const p = easeBack((v.choiceT - k * 0.08) / 0.3), y = 870 - n.c.length * 104 + k * 104;
           if (v.choiceT < k * 0.08) return;
           ctx.save(); ctx.translate((1 - p) * 90, 0); ctx.globalAlpha = clamp(p, 0, 1);
-          btn('c' + k, 24, y, 672, 92, C.white, C.steel, () => {
+          btn('c' + k, 24, y, 672, 92, C.white, C.white, () => {
             ell(72, y + 46, 24, 24, C.mint, C.ink, 4); textO(String(k + 1), 72, y + 47, 26, C.white, C.ink, 5);
             const lines = wrap(fill(optText(o)), 560, 24, true);
             lines.forEach((l, j) => text(l, 112, y + 46 + (j - (lines.length - 1) / 2) * 30, 24, C.ink, 'left', true));
           }, { r: 24 });
           ctx.restore();
         });
-      } else { zone('next', 0, 0, W, H); panel(250, 1214, 220, 44, 22, C.ink, C.ink, { shadow: 0, gloss: false }); text('터치해서 계속', 360, 1236, 20, C.white, 'center', true); }
+      } else { zone('next', 0, 0, W, H); panel(250, 1206, 220, 44, 22, C.ink, C.ink, { shadow: 0, lip: false }); text('터치해서 계속', 360, 1228, 20, C.white, 'center', true); }
     },
   },
   pick: {
@@ -769,7 +782,7 @@ const scenes = {
       checker(0, 0, W, H, 60, '#e8fbf6', '#d6f5ec');
       header(`${sv.week}주차 ${sv.day}일 · ${sh.name}조 ${String(sh.hour).padStart(2, '0')}:00`, '오늘의 파트너를 선택하세요');
       panel(20, 156, 680, 76, 20, C.white, C.white, { shadow: 4 });
-      drawPortrait(rid, 'neutral', 30, 164, 90, 60, null, { shadow: 0, r: 10 });
+      drawChibi(rid, 76, 230, 70);
       text(`오늘의 라이더 ${rc.name}`, 134, 182, 22, C.ink, 'left', true); text(rc.station, 134, 210, 20, C.ink2, 'left');
       curSeason = ss;
       if (ss) { drawItem('season', 420, 194, 0.6); text('이번 주 시즌 메뉴', 456, 182, 20, C.cherryD, 'left', true); text(ss.name, 456, 210, 22, C.ink, 'left', true); }
@@ -780,15 +793,12 @@ const scenes = {
         if (state.sceneT < i * 0.05) return;
         ctx.globalAlpha = clamp(p, 0, 1);
         btn('p' + i, x, y, 330, 460, C.white, C.white, () => {
-          drawPortrait(id, 'neutral', x + 12, y + 12, 306, 204, null, { shadow: 0, r: 14 });
-          ell(x + 34, y + 34, 18, 18, cr.color, C.ink, 3); textO(String(i + 1), x + 34, y + 35, 22, C.white, C.ink, 4);
-          text(cr.full, x + 16, y + 246, 28, C.ink, 'left', true); text(cr.role, x + 314, y + 248, 20, C.ink2, 'right');
-          rr(x + 12, y + 272, 306, 38, 12, cr.color, null);
-          ctx.fillStyle = 'rgba(255,255,255,0.78)'; ctx.beginPath(); ctx.roundRect(x + 12, y + 272, 306, 38, 12); ctx.fill();
-          text(cr.station, x + 165, y + 292, 20, C.ink, 'center', true);
-          text(`${R.e} ${R.label}`, x + 16, y + 336, 22, C.ink, 'left', true); text(`같이 근무 ${sv.count[id]}회`, x + 314, y + 336, 20, C.ink2, 'right');
-          line(x + 16, y + 362, x + 314, y + 362, '#dfe6ec', 3);
-          wrap(`"${cr.mind[relIdx(sv.aff[id])]}"`, 290, 20).slice(0, 3).forEach((l, j) => text(l, x + 165, y + 392 + j * 26, 20, C.ink2, 'center'));
+          drawPortrait(id, 'neutral', x + 12, y + 12, 306, 296, null, { shadow: 0, r: 14, zoom: 1.5 });
+          ell(x + 36, y + 36, 18, 18, cr.color, C.white, 4); textO(String(i + 1), x + 36, y + 37, 22, C.white, C.ink, 4);
+          text(cr.full, x + 16, y + 338, 28, C.ink, 'left', true); text(cr.role, x + 314, y + 340, 20, C.ink2, 'right');
+          rr(x + 12, y + 362, 306, 38, 12, shade(cr.color, 0.7), null);
+          text(cr.station, x + 165, y + 382, 20, C.ink, 'center', true);
+          text(`${R.e} ${R.label}`, x + 16, y + 428, 22, C.ink, 'left', true); text(`같이 근무 ${sv.count[id]}회`, x + 314, y + 428, 20, C.ink2, 'right');
         }, { r: 22 });
         ctx.globalAlpha = 1;
       });
@@ -865,7 +875,9 @@ const scenes = {
       if (t > 1.5) {
         const p = easeBack((t - 1.5) / 0.3), oy = (1 - p) * 40; ctx.globalAlpha = clamp(p, 0, 1);
         panel(30, 884 + oy, 660, 180, 28, C.white, C.paper);
-        drawPortrait(s.partner, GRADES.indexOf(s.grade) >= 3 ? 'happy' : GRADES.indexOf(s.grade) <= 0 ? 'flustered' : 'smile', 46, 900 + oy, 222, 148, null, { shadow: 0, r: 14 });
+        ctx.save(); ctx.beginPath(); ctx.rect(30, 600, 260, 461 + oy); ctx.clip(); // 아래만 패널에 맞춰 자르고 위로는 튀어나오게
+        drawChar(s.partner, GRADES.indexOf(s.grade) >= 3 ? 'happy' : GRADES.indexOf(s.grade) <= 0 ? 'flustered' : 'smile', 160, 1104 + oy, 256);
+        ctx.restore();
         textO(`${cr.name} 호감도 +${s.gain}`, 478, 926 + oy, 28, C.pink, C.ink, 6);
         text(s.after !== s.before ? `${R[s.before].e} → ${R[s.after].e} ${R[s.after].label}` : `${R[s.after].e} ${R[s.after].label}`, 478, 972 + oy, 26, C.ink, 'center', true);
         text(GRADES.indexOf(s.grade) >= 3 ? '평가 A 이상! 추가 장면이 열려요' : '평가 A 이상이면 추가 장면이 열려요', 478, 1012 + oy, 20, C.ink2);
@@ -897,14 +909,16 @@ const scenes = {
       checker(0, 0, W, H, 60, '#fff6dc', '#ffeec0');
       header('마감 후', a.mode === 'main' ? '누구와 시간을 보낼까요?' : a.mode === 'who' ? '누구에게 제안할까요?' : `${STORY.crew[a.who].name}에게 뭘 하자고 할까요?`);
       acts.forEach((x, i) => {
-        const y0 = 168 + i * 148, p = easeBack((state.sceneT - i * 0.05) / 0.3), y = y0 + (1 - p) * 40, cr = x.who ? STORY.crew[x.who] : null;
+        const ch = Math.min(232, Math.floor(1010 / acts.length) - 16), m = (ch - 132) / 2; // 고를 것이 적으면 카드와 그림을 크게
+        const y0 = 168 + i * (ch + 16), p = easeBack((state.sceneT - i * 0.05) / 0.3), y = y0 + (1 - p) * 40, cr = x.who ? STORY.crew[x.who] : null;
         if (state.sceneT < i * 0.05) return;
         ctx.globalAlpha = clamp(p, 0, 1);
         const pinkish = x.kind === 'request';
-        btn(x.id, 24, y, 672, 132, x.locked ? '#e8ecf0' : pinkish ? '#ffe3ee' : C.white, C.white, () => {
+        btn(x.id, 24, y, 672, ch, x.locked ? '#e8ecf0' : pinkish ? '#ffe3ee' : C.white, C.white, () => {
           ell(54, y + 30, 18, 18, pinkish ? C.pink : C.sun, C.ink, 3); text(String(i + 1), 54, y + 31, 20, C.ink, 'center', true);
           let tx = 86;
-          if (cr && x.kind !== 'type') { drawPortrait(x.who, x.kind === 'request' ? 'smile' : 'neutral', 84, y + 14, 156, 104, null, { shadow: 0, r: 12 }); tx = 258; }
+          if (cr && x.kind !== 'type') { const pw = Math.round((ch - 28) * 1.3); drawPortrait(x.who, x.kind === 'request' ? 'smile' : 'neutral', 84, y + 14, pw, ch - 28, null, { shadow: 0, r: 12 }); tx = 84 + pw + 18; }
+          ctx.save(); ctx.translate(0, m);
           if (x.kind === 'event') {
             const list = STORY.events[x.who], isNew = sv.seen[x.who] < list.length, R = relOf(x.who);
             text(cr.rider ? `${cr.name}와 뒷문에서` : `${cr.name}와 마감 정리`, tx, y + 40, 26, C.ink, 'left', true);
@@ -913,13 +927,14 @@ const scenes = {
           } else if (x.kind === 'request') {
             const D = STORY.dates[x.who][a.request.type], tn = STORY.dateTypes.find(t => t.id === a.request.type).name;
             text(`${cr.name}의 제안 · ${tn}`, tx, y + 32, 24, C.cherryD, 'left', true);
-            wrap('"' + ((bm(x.who) && D.askB) || D.ask) + '"', 290, 20).slice(0, 3).forEach((l, j) => text(l, tx, y + 64 + j * 24, 20, C.ink, 'left'));
+            wrap('"' + ((bm(x.who) && D.askB) || D.ask) + '"', 546 - tx, 20).slice(0, 3).forEach((l, j) => text(l, tx, y + 64 + j * 24, 20, C.ink, 'left'));
           } else if (x.kind === 'invite') { drawHeart(120, y + 66, 2); text('내가 먼저 제안하기', 190, y + 52, 26, C.ink, 'left', true); text('커피, 산책, 밥, 술, 집 놀러 가기', 190, y + 88, 20, C.ink2, 'left'); }
           else if (x.kind === 'who') { text(`${cr.name}에게 제안하기`, tx, y + 52, 26, C.ink, 'left', true); text(`${relOf(x.who).e} ${relOf(x.who).label}`, tx, y + 88, 20, C.ink2, 'left'); }
           else if (x.kind === 'type') { text(x.type.name, 90, y + 52, 28, x.locked ? C.ink2 : C.ink, 'left', true); text(x.locked ? `${STORY.rel[x.type.rel].label} 단계부터` : sv.dates[x.who + ':' + x.type.id] ? '가 본 적 있어요' : '아직 안 가 봤어요', 90, y + 90, 20, C.ink2, 'left'); }
           else text('돌아가기', 360, y + 66, 26, C.ink, 'center', true);
+          ctx.restore();
         }, { r: 22 });
-        if (x.kind === 'request') btn('no', 566, y + 44, 116, 46, C.white, C.white, () => text('다음에', 624, y + 67, 20, C.ink, 'center', true), { r: 16, shadow: 3 });
+        if (x.kind === 'request') btn('no', 566, y + m + 44, 116, 46, C.white, C.white, () => text('다음에', 624, y + m + 67, 20, C.ink, 'center', true), { r: 16, shadow: 3 });
         ctx.globalAlpha = 1;
       });
       if (a.said) { panel(24, 1150, 672, 96, 22, C.white, C.white); const cr = STORY.crew[a.said.id]; wrap(a.said.sys ? a.said.text : `${cr.name}: "${a.said.text}"`, 620, 22).slice(0, 2).forEach((l, j, arr) => text(l, 360, 1198 + (j - (arr.length - 1) / 2) * 28, 22, C.ink, 'center', true)); }
@@ -970,8 +985,9 @@ function stationTile(id, x, y, w, h, label, color, icon, st) { // st: { status, 
     ctx.globalAlpha = off ? 0.4 : 1;
     const bob = st.busy ? Math.sin(t * 10) * 3 : 0;
     if (st.dark) ctx.filter = 'brightness(0.35)';
-    if (icon) drawItem(icon, x + w / 2, y + 112 + bob, 1.05);
+    if (icon) drawItem(icon, x + w / 2 + (st.theirs ? 56 : 0), y + 112 + bob + (st.theirs ? 22 : 0), st.theirs ? 0.6 : 1.05);
     ctx.filter = 'none'; ctx.globalAlpha = 1;
+    if (st.theirs) drawChibi(state.d.partner, x + w / 2 - 22, y + 158 - Math.abs(bob), 98); // 맡은 구역에서 일하는 파트너
     if (st.prog >= 0) bar(x + 18, y + h - 76, w - 36, 20, st.prog, st.pc || C.green);
     const lines = wrap(st.status, w - 20, 20, true);
     lines.forEach((l, j) => text(l, x + w / 2, y + h - 30 + (j - (lines.length - 1) / 2) * 22, 20, st.alert ? C.cherryD : off ? C.ink2 : C.ink, 'center', true));
@@ -1117,7 +1133,7 @@ function drawPlay() {
   // 떠나는 손님
   d.ghosts.forEach(gh => {
     const k = gh.t / 0.45; ctx.globalAlpha = 1 - k;
-    if (gh.delivery) { drawPortrait(d.rider, 'smile', gh.x - 52 - k * 140, 344, 104, 96, null, { shadow: 0, r: 14 }); drawItem('bag', gh.x + 40 - k * 140, 436, 0.6); }
+    if (gh.delivery) { drawChibi(d.rider, gh.x - 14 - k * 140, 462, 124); drawItem('bag', gh.x + 46 - k * 140, 432, 0.6); }
     else drawCustomer(gh.look, gh.x, 498 + easeOut(k) * 70 - Math.sin(k * Math.PI) * 26, 'happy', 0.86);
     ctx.globalAlpha = 1;
   });
@@ -1126,7 +1142,7 @@ function drawPlay() {
     if (!o) return;
     const fr = o.pat / o.patMax, mood = fr > 0.6 ? 'happy' : fr > 0.28 ? 'ok' : 'angry', e = o.enter, a = clamp(e * 1.5, 0, 1);
     const x = 96 + i * 176 + (mood === 'angry' ? Math.sin(t * 34) * 2 : 0), bob = Math.sin(t * 2.2 + i * 1.7) * 2;
-    if (o.delivery) { const ry = (1 - easeBack(e)) * 60 + bob; drawPortrait(d.rider, fr > 0.28 ? 'work' : 'flustered', x - 52, 344 + ry, 104, 96, null, { shadow: 3, r: 14 }); drawItem('bag', x + 40, 436 + ry, 0.6); }
+    if (o.delivery) { const ry = (1 - easeBack(e)) * 60 + bob; drawChibi(d.rider, x - 14, 462 + ry, 124); drawItem('bag', x + 46, 432 + ry, 0.6); }
     else drawCustomer(o.look, x, 498 + (1 - easeOut(e)) * 110 + bob, mood, 0.86);
     const ty = 172 + (1 - easeBack(e)) * -70;
     ctx.globalAlpha = a;
@@ -1150,6 +1166,7 @@ function drawPlay() {
   panel(-6, 462, W + 12, 88, 0, C.wood, C.woodD, { shadow: 0 }); fillRect(-6, 462, W + 12, 14, '#ffc98a'); line(-6, 476, W + 6, 476, C.ink, 4);
   panel(250, 488, 220, 48, 14, C.white, C.paper, { shadow: 3 }); text('GOLDEN BUN', 360, 513, 22, C.cherryD, 'center', true);
   drawBunny(224, 520, 0.42); drawBunny(496, 520, 0.42);
+  drawChibi(d.partner, 648, 552 - (d.bubble.t > 0 ? Math.abs(Math.sin(t * 9)) * 7 : 0), 104); // 카운터에 선 파트너
   // 완성 선반
   panel(-6, 550, W + 12, 92, 0, '#f4f6fc', C.steel, { shadow: 0, lip: false });
   text('완성', 42, 596, 22, C.ink, 'center', true);
@@ -1162,15 +1179,15 @@ function drawPlay() {
   // 파트너
   fillRect(0, 642, W, 110, C.white); fillRect(0, 642, W, 4, '#dfe6ec');
   zone('help', 8, 646, 312, 102);
-  drawPortrait(d.partner, d.shake > 0 ? 'annoyed' : peak ? 'flustered' : d.bubble.t > 0 ? 'happy' : 'work', 14, 652, 96, 90, null, { shadow: 3, r: 14 });
-  text(`${cr.name}  ${relOf(d.partner).e}`, 124, 666, 24, C.ink, 'left', true);
-  text(d.ptask ? `${JOB_NAMES[d.ptask.id]} 준비 중` : cr.station.split(' · ')[0], 124, 694, 20, C.ink2, 'left');
+  drawPortrait(d.partner, d.shake > 0 ? 'annoyed' : peak ? 'flustered' : d.bubble.t > 0 ? 'happy' : 'work', 12, 650, 124, 96, null, { shadow: 3, r: 16, zoom: 1.0 });
+  text(`${cr.name}  ${relOf(d.partner).e}`, 150, 666, 24, C.ink, 'left', true);
+  text(d.ptask ? `${JOB_NAMES[d.ptask.id]} 준비 중` : cr.station.split(' · ')[0], 150, 694, 20, C.ink2, 'left');
   if (d.help >= 1) { // 다 찬 도움 게이지는 버튼이 된다
     const k = 1 + 0.05 * Math.sin(t * 9);
-    ctx.save(); ctx.translate(215, 727); ctx.scale(k, k); ctx.translate(-215, -727);
-    btn('help', 122, 708, 186, 38, C.pink, '#f0609a', () => { drawHeart(146, 727, 0.7, C.white); textO('도와줘요!', 226, 728, 22, C.white, '#a8346a', 5); }, { r: 19, shadow: 3 });
+    ctx.save(); ctx.translate(233, 727); ctx.scale(k, k); ctx.translate(-233, -727);
+    btn('help', 146, 708, 174, 38, C.pink, '#f0609a', () => { drawHeart(168, 727, 0.7, C.white); textO('도와줘요!', 244, 728, 22, C.white, '#a8346a', 5); }, { r: 19, shadow: 3 });
     ctx.restore();
-  } else { drawHeart(136, 727, 0.7); bar(154, 717, 150, 20, d.help, C.pink, '#f3e3ea'); }
+  } else { drawHeart(160, 727, 0.7); bar(178, 717, 136, 20, d.help, C.pink, '#f3e3ea'); }
   if (d.chat) { // 잡담: 질문과 대답 두 개
     const c = d.chat, k = easeBack(c.age / 0.22);
     at(517, 697, k, () => { panel(-191, -49, 382, 98, 18, '#fff3f8', C.white, { shadow: 4, lip: false, stroke: C.pink }); text(c.q, 0, -28, 20, C.ink, 'center', true); bar(-170, -12, 340, 6, c.t / tune.chatTime, C.pink, '#f6dbe7'); });
@@ -1310,6 +1327,7 @@ if (document.fonts && document.fonts.load) { document.fonts.load('20px Jua').cat
 if (window.ART) { // 스탠딩과 CG를 시작할 때 미리 불러 둔다
   for (const id in ART.crew) for (const k in ART.crew[id]) getImg(ART.crew[id][k]);
   for (const k in ART.cg) getImg(ART.cg[k]);
+  for (const k in (ART.chibi || {})) getImg(ART.chibi[k]);
 }
 reset();
 scene = params.get('scene') || 'title';
